@@ -82,7 +82,8 @@ worktree, owns their reds, and when out of tasks waits with `refs/wait/any` nami
 the lead does not push for them. **A lead never sleeps or polls.** In Claude Code, start
 workers with the Agent tool in the background (`run_in_background: true`), then end your turn:
 Claude Code starts your next turn with a notification each time a worker finishes (`claude -p`
-stays alive while background workers run). On each notification read the report, start the
+stays alive for them, but stops them 10 minutes after your last turn unless it runs with
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`). On each notification read the report, start the
 next worker if work remains, and end your turn again. After the last worker has reported, one
 `git push origin HEAD:refs/wait/all` (every bean of the shared credential), then report. Push
 options and every `remote:` line: `references/push-flow.md`.
