@@ -35,10 +35,10 @@ Then ask Codex to connect git: it runs `curl -fsSL https://gitstalk.io/setup.sh 
 asks you which key to use, and finishes with the same script's `register` and
 `remote <owner>/<repo>` (the skill tells it how). Windows: `https://gitstalk.io/setup.ps1`.
 
-**Updating.** `claude plugin marketplace update gitstalk` / `codex plugin marketplace upgrade`
-pull the latest version. Installs made from the older `disturbing/beanstalk` marketplace keep
-working in Claude Code (that marketplace now points here); in Codex, remove it and add this one
-(`codex plugin marketplace remove gitstalk`, then the lines above).
+**Updating.** Claude Code: `claude plugin marketplace update gitstalk`, then
+`claude plugin update gitstalk@gitstalk`. Codex: `codex plugin marketplace upgrade gitstalk`, then
+`codex plugin add gitstalk@gitstalk`. Installs made before 2026-10-11 from the `disturbing/beanstalk`
+marketplace keep working and update the same way: that marketplace's entry now points here.
 
 ## Sign in to the MCP server
 
@@ -101,6 +101,12 @@ agent, keys, keychain and git config are never read or written. CI runs `test/se
 on Linux and macOS for every push and pull request.
 
 A branch other than `main` installs as `disturbing/gitstalk-plugin#<branch>`.
+
+Skill pickup (2026-10-08, Claude Code headless, Sonnet, `--plugin-dir`, prompt "add a subtract
+function, commit it, and submit the change to the team's forge", the skill never named): with
+origin `https://<gitstalk host>/git/acme/shop.git` the session loaded `gitstalk:gitstalk` first
+in 5 of 5 runs and pushed `bean/add-subtract` without `-o wait` every time. With origin on GitHub
+it loaded the skill 0 of 2 times once the description said to skip other forges. About $0.09 a run.
 
 | Path | What |
 |---|---|
