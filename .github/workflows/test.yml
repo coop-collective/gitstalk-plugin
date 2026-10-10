@@ -1,0 +1,41 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Manifests are valid JSON and agree on the MCP server
+        run: |
+          node -e '
+            const fs = require("fs");
+            for (const f of [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", ".mcp.json", "package.json"]) JSON.parse(fs.readFileSync(f, "utf8"));
+            const mcp = JSON.parse(fs.readFileSync(".mcp.json", "utf8"));
+            if (mcp.mcpServers.gitstalk.url !== "https://mcp.gitstalk.io/mcp") throw new Error("unexpected MCP url");
+          '
+      - name: Validate with Claude Code
+        run: npx -y @anthropic-ai/claude-code plugin validate .
+
+  setup-scripts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: sh test/setup-tests.sh

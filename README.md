@@ -1,86 +1,137 @@
-# Gitstalk plugin for Claude Code
+# Gitstalk plugin for Claude Code and Codex
 
-Teaches a coding agent to work on a Gitstalk repository: git is the interface (clone, branch
-`bean/<name>`, commit with the intent, a plain `git push` submits the bean and the agent takes its
-next task while the pre-land check runs; when out of work one blocking `git push -o bean=<name>
-origin HEAD:refs/wait/any` returns at the first verdict, so nothing sleeps or polls; it rebases on
-the sprout and fixes its own reds; stacking on a pushed bean; a lead waits on its workers'
-completion notifications), and the `gitstalk` MCP server is optional context
-(`work_overlaps`, `ask_repo`, `checks_get`, decision cards, bean-to-bean conversation).
+[Gitstalk](https://gitstalk.io) is an agent-first git forge: many agents push small `bean/<name>`
+branches, each gets a pre-land check, and green beans land on the `sprout`. This plugin teaches
+a coding agent to work on a Gitstalk repository and connects it to the Gitstalk MCP server.
 
-## Install and connect, in one line
+Git is the interface. The agent clones, branches `bean/<name>`, commits with the intent, and a
+plain `git push` submits the bean; it takes its next task while the check runs. When it runs out
+of work, one blocking `git push -o bean=<name> origin HEAD:refs/wait/any` returns at the first
+verdict, so nothing sleeps or polls. It rebases on the sprout and fixes its own reds, stacks a
+task on a pushed bean, and a lead waits on its workers' completion notifications. The `gitstalk`
+MCP server is optional context: `work_overlaps`, `ask_repo`, `checks_get`, decision cards and
+bean-to-bean conversation.
+
+The Gitstalk service itself lives in [disturbing/beanstalk](https://github.com/disturbing/beanstalk).
+
+## Install
+
+**Claude Code**
 
 ```bash
-claude plugin marketplace add disturbing/beanstalk && claude plugin install gitstalk@gitstalk && claude "/gitstalk:setup <owner>/<repo>"
+claude plugin marketplace add disturbing/gitstalk-plugin
+claude plugin install gitstalk@gitstalk
+claude "/gitstalk:setup <owner>/<repo>"
 ```
 
-`/gitstalk:setup` connects git to your account once: Claude lists the SSH keys this machine
-has (1Password's SSH agent, ssh-agent, `~/.ssh`) or offers to make one, asks which to use, and
-a Gitstalk tab opens for you to approve it (one click when signed in; a passkey otherwise).
-On a machine without a browser (SSH) it shows a code to enter on another device. After that
-git never asks for a password. Until Gitstalk's SSH endpoint is live, setup also stores an
-HTTPS token in your OS keychain through git's own credential helper, for the Gitstalk host
-only, and says so.
+**Codex**
 
-For MCP (optional): `claude mcp login plugin:gitstalk:gitstalk` (or `/mcp` in a session), sign in, approve.
+```bash
+codex plugin marketplace add disturbing/gitstalk-plugin
+codex plugin add gitstalk@gitstalk
+```
 
-## Without Claude Code
+Then ask Codex to connect git: it runs `curl -fsSL https://gitstalk.io/setup.sh | sh -s -- detect`,
+asks you which key to use, and finishes with the same script's `register` and
+`remote <owner>/<repo>` (the skill tells it how). Windows: `https://gitstalk.io/setup.ps1`.
 
-- **Codex and other agents:** `codex mcp add gitstalk --url <mcp>/mcp && codex mcp login gitstalk`,
-  then ask the agent to run `curl -fsSL <web>/setup.sh | sh -s -- detect`, ask you which key to
-  use, and finish with the same script's `register` and `remote <owner>/<repo>`
-  (`AGENTS-snippet.md` says this for them). Windows: `<web>/setup.ps1`.
-- **By hand, HTTPS:** clone, and paste a personal token (Settings, Tokens) at git's password
-  prompt.
-- **CI and scripts:** a deploy token for one repository in `GITSTALK_TOKEN`, with
-  `GIT_TERMINAL_PROMPT=0` and `GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0='credential.https://<gitstalk host>.helper'`
-  / `GIT_CONFIG_VALUE_0='!f() { echo "username=x"; echo "password=$GITSTALK_TOKEN"; }; f'`
-  (the repository page, tab "Env vars", fills it in).
+**Updating.** `claude plugin marketplace update gitstalk` / `codex plugin marketplace upgrade`
+pull the latest version. Installs made from the older `disturbing/beanstalk` marketplace keep
+working in Claude Code (that marketplace now points here); in Codex, remove it and add this one
+(`codex plugin marketplace remove gitstalk`, then the lines above).
 
-## Contents
+## Sign in to the MCP server
 
-| File | What |
+The plugin registers one MCP server, `gitstalk`, at `https://mcp.gitstalk.io/mcp` over HTTP with
+OAuth (no header, no token in a file). Sign in once:
+
+```bash
+claude mcp login plugin:gitstalk:gitstalk     # or /mcp inside a session
+codex mcp login gitstalk                      # Codex keeps the credential in the OS keychain
+```
+
+A browser tab opens: sign up or sign in with a passkey and approve the agent; the `whoami` tool
+then names you. The MCP server is optional; git alone is enough to push and read verdicts.
+
+## What it adds
+
+| Piece | What it does |
 |---|---|
-| `.claude-plugin/plugin.json` | Manifest |
-| `.mcp.json` | MCP server (HTTP, no auth header so the client uses OAuth) |
-| `commands/setup.md` | `/gitstalk:setup [owner/repo]`: connect git (SSH key, browser approval) |
-| `commands/bean-status.md` | `/gitstalk:bean-status [bean]` |
-| `scripts/gitstalk-setup.sh`, `.ps1` | The setup script (POSIX sh: macOS, Linux, WSL, Git Bash; PowerShell: Windows) |
-| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, reds/conflicts/cards) |
-| `AGENTS-snippet.md` | The same guidance, compact, to paste into a repo's `AGENTS.md` (Codex, Cursor, Copilot, Gemini CLI) |
-| `test/` | Script tests: `sh test/setup-tests.sh` (macOS), `sh test/run-containers.sh` (Linux sh and PowerShell in Docker) |
+| Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
+| `/gitstalk:setup [owner/repo]` | Connects git on this machine to your account: lists the SSH keys you have (1Password's SSH agent, ssh-agent, `~/.ssh`) or makes one, asks which to use, and opens Gitstalk once to approve it (a code to enter on another device when there is no browser). Only a public key is sent. |
+| `/gitstalk:bean-status [bean]` | Where a bean is (checking, landed, sent back, reverted, on the stalk) and the single next action. |
+| `.mcp.json` | The `gitstalk` MCP server (HTTP, OAuth). |
+| `AGENTS-snippet.md` | The same guidance, compact, to paste into a repository's `AGENTS.md` for agents without plugins (Cursor, Copilot, Gemini CLI). |
 
-From a checkout: `claude --plugin-dir packages/claude-plugin`; `claude plugin validate .` checks
-the marketplace, `claude plugin validate packages/claude-plugin` the plugin. A branch other than
-the default is named as `disturbing/beanstalk#<branch>`. `GITSTALK_WEB` points setup at
-another deployment; for its MCP server use `claude mcp add --transport http gitstalk <url>`
-(the plugin's `.mcp.json` URL is literal, because Codex does not expand `${VAR:-default}` there).
+Until Gitstalk's SSH endpoint is live, setup also stores an HTTPS token in your OS keychain
+through git's own credential helper, for the Gitstalk host only, and says so.
 
-Skill pickup (2026-10-08, Claude Code headless, Sonnet, `--plugin-dir`, prompt "add a subtract
-function, commit it, and submit the change to the team's forge", the skill never named): with
-origin `https://<gitstalk host>/git/acme/shop.git` the session loaded `gitstalk:gitstalk` first
-in 5 of 5 runs (4 with a `sprout` branch, 1 with only `main`; 3 before and 2 after the
-description gained "skip this skill when origin is GitHub, GitLab…") and pushed `bean/add-subtract`
-without `-o wait` every time. With origin on GitHub it loaded the skill before that line (1 of 1
-with `main`, 1 of 1 with a `sprout` branch) and 0 of 2 after it. About $0.09 a run.
+## Setup scripts
 
-Sign-up through the agent, verbatim (also on the site and the web app's `/signup/agent`):
+`scripts/gitstalk-setup.sh` (POSIX sh: macOS, Linux, WSL, Git Bash) and
+`scripts/gitstalk-setup.ps1` (PowerShell, Windows) are what `/gitstalk:setup` runs locally from
+the plugin. The copies served at `https://gitstalk.io/setup.sh` and `/setup.ps1` are canonical
+for agents without the plugin and live in the service repository
+(`packages/web/src/setup/scripts/`); change both together. `GITSTALK_WEB` points the script at
+another deployment.
+
+## Without a plugin
+
+- **By hand, HTTPS:** clone, and paste a personal token (Settings, Tokens) at git's password prompt.
+- **CI and scripts:** a deploy token for one repository in `GITSTALK_TOKEN`, with
+  `GIT_TERMINAL_PROMPT=0` and `GIT_CONFIG_COUNT=1` /
+  `GIT_CONFIG_KEY_0='credential.https://<gitstalk host>.helper'` /
+  `GIT_CONFIG_VALUE_0='!f() { echo "username=x"; echo "password=$GITSTALK_TOKEN"; }; f'`
+  (the repository page, tab "Env vars", fills it in).
+- **Another MCP client:** `claude mcp add --transport http gitstalk <url>` or
+  `codex mcp add gitstalk --url <url>`. The URL in `.mcp.json` is literal because Codex does not
+  expand `${VAR:-default}` there; a self-hosted deployment adds its own server this way.
+
+## Development
 
 ```bash
-claude plugin marketplace add disturbing/beanstalk && claude plugin install gitstalk@gitstalk && claude mcp login plugin:gitstalk:gitstalk
-codex plugin marketplace add disturbing/beanstalk && codex plugin add gitstalk@gitstalk && codex mcp login gitstalk
+claude --plugin-dir .                       # load this checkout in Claude Code
+claude plugin validate .                    # check the marketplace and the plugin manifest
+sh test/setup-tests.sh                      # setup-script tests against a fake Gitstalk (needs node, git, OpenSSH)
+sh test/run-containers.sh                   # the same in Linux containers and PowerShell (needs Docker)
 ```
+
+The tests run in a throwaway `HOME` with their own git config, ssh-agents and keys; your own
+agent, keys, keychain and git config are never read or written. CI runs `test/setup-tests.sh`
+on Linux and macOS for every push and pull request.
+
+A branch other than `main` installs as `disturbing/gitstalk-plugin#<branch>`.
+
+| Path | What |
+|---|---|
+| `.claude-plugin/marketplace.json` | The marketplace (one plugin, `gitstalk`, at the repository root); Claude Code and Codex both read it |
+| `.claude-plugin/plugin.json` | Plugin manifest |
+| `.mcp.json` | MCP server |
+| `commands/` | `/gitstalk:setup`, `/gitstalk:bean-status` |
+| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, reds, conflicts and cards) |
+| `scripts/` | Setup scripts |
+| `test/` | Script tests and the fake Gitstalk server they run against |
 
 ## Status of the server side
 
 | Feature | State |
 |---|---|
 | MCP read tools, collaboration tools | Live |
-| MCP repository tools: `repo_list`, `repo_status`, `bean_open`, `bean_status`, `bean_wait`, `task_list`, `task_claim`, `task_release`, `git_credentials` | Live (`docs/claude-opus/23-mcp-repository-tools.md`) |
-| Git-native intake (`bean/<name>`, push options, `remote:` verdicts, `refs/beans/<name>/status`) | Live on people's repositories (`https://<gitstalk host>/<owner>/<repo>.git`) |
-| Waiting in git (`refs/wait/any`, `refs/wait/all`, `-o bean=`), event-driven `-o wait` and `bean_wait` (plugin 0.6.0) | Live (`docs/claude-opus/18-git-native-flow.md` §4.1) |
+| MCP repository tools: `repo_list`, `repo_status`, `bean_open`, `bean_status`, `bean_wait`, `task_list`, `task_claim`, `task_release`, `git_credentials` | Live |
+| Git-native intake (`bean/<name>`, push options, `remote:` verdicts, `refs/beans/<name>/status`) | Live (`https://<gitstalk host>/<owner>/<repo>.git`) |
+| Waiting in git (`refs/wait/any`, `refs/wait/all`, `-o bean=`), event-driven `-o wait` and `bean_wait` | Live |
 | `/gitstalk:setup`, SSH keys in Settings, deploy tokens | Live; git over SSH itself is **coming** (HTTPS with a token until then) |
-| MCP OAuth (`claude mcp login`, `/mcp`) | Live: sign up or sign in with a passkey, approve the agent; `whoami` names you |
+| MCP OAuth (`claude mcp login`, `/mcp`, `codex mcp login`) | Live: sign up or sign in with a passkey, approve the agent |
 | Decision-card tools | **Coming** |
 
-Update the skill, snippet and this table when those land.
+Update the skill, the snippet and this table when those land.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Server-side behaviour, the MCP tools and the public
+docs live in [disturbing/beanstalk](https://github.com/disturbing/beanstalk).
+
+## License
+
+[FSL-1.1-ALv2](LICENSE.md), the same as Gitstalk: source-available, no competing hosted use, and
+each version becomes Apache-2.0 two years after its release.

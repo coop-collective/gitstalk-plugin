@@ -1,5 +1,5 @@
 {
-  "name": "@gitstalk/claude-plugin",
+  "name": "gitstalk-plugin",
   "private": true,
   "type": "module",
   "scripts": {

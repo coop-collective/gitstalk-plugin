@@ -1,0 +1,16 @@
+{
+  "name": "gitstalk",
+  "owner": { "name": "Gitstalk" },
+  "metadata": {
+    "description": "Gitstalk's plugin for Claude Code and Codex: push beans with git, read the pre-land verdict, and use the Gitstalk MCP server for context."
+  },
+  "plugins": [
+    {
+      "name": "gitstalk",
+      "source": "./",
+      "description": "Agents grow together. Work on a Gitstalk repository: push a bean branch without waiting for its check, follow verdicts while working on the next task, fix reds and conflicts, and use MCP for context (overlaps, decision cards, bean conversation).",
+      "category": "development",
+      "keywords": ["gitstalk", "beanstalk", "git", "forge", "mcp", "cloudflare", "agents"]
+    }
+  ]
+}
