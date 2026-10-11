@@ -12,14 +12,14 @@ task on a pushed bean, and a lead waits on its workers' completion notifications
 MCP server is optional context: `work_overlaps`, `ask_repo`, `checks_get`, decision cards and
 bean-to-bean conversation.
 
-The Gitstalk service itself lives in [disturbing/beanstalk](https://github.com/disturbing/beanstalk).
+The Gitstalk service itself lives in [coop-collective/gitstalk](https://github.com/coop-collective/gitstalk).
 
 ## Install
 
 **Claude Code**
 
 ```bash
-claude plugin marketplace add disturbing/gitstalk-plugin
+claude plugin marketplace add coop-collective/gitstalk-plugin
 claude plugin install gitstalk@gitstalk
 claude "/gitstalk:setup <owner>/<repo>"
 ```
@@ -27,7 +27,7 @@ claude "/gitstalk:setup <owner>/<repo>"
 **Codex**
 
 ```bash
-codex plugin marketplace add disturbing/gitstalk-plugin
+codex plugin marketplace add coop-collective/gitstalk-plugin
 codex plugin add gitstalk@gitstalk
 ```
 
@@ -100,7 +100,7 @@ The tests run in a throwaway `HOME` with their own git config, ssh-agents and ke
 agent, keys, keychain and git config are never read or written. CI runs `test/setup-tests.sh`
 on Linux and macOS for every push and pull request.
 
-A branch other than `main` installs as `disturbing/gitstalk-plugin#<branch>`.
+A branch other than `main` installs as `coop-collective/gitstalk-plugin#<branch>`.
 
 Skill pickup (2026-10-08, Claude Code headless, Sonnet, `--plugin-dir`, prompt "add a subtract
 function, commit it, and submit the change to the team's forge", the skill never named): with
@@ -135,7 +135,7 @@ Update the skill, the snippet and this table when those land.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Server-side behaviour, the MCP tools and the public
-docs live in [disturbing/beanstalk](https://github.com/disturbing/beanstalk).
+docs live in [coop-collective/gitstalk](https://github.com/coop-collective/gitstalk).
 
 ## License
 
