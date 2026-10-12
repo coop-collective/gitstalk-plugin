@@ -57,7 +57,7 @@ then names you. The MCP server is optional; git alone is enough to push and read
 
 | Piece | What it does |
 |---|---|
-| Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
+| Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, Actions (workflows run when a bean reaches the stalk; wait, read the failing log, fix; secrets), the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
 | `/gitstalk:setup [owner/repo]` | Connects git on this machine to your account: lists the SSH keys you have (1Password's SSH agent, ssh-agent, `~/.ssh`) or makes one, asks which to use, and opens Gitstalk once to approve it (a code to enter on another device when there is no browser). Only a public key is sent. |
 | `/gitstalk:bean-status [bean]` | Where a bean is (checking, landed, sent back, reverted, on the stalk) and the single next action. |
 | `.mcp.json` | The `gitstalk` MCP server (HTTP, OAuth). |
@@ -114,7 +114,7 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | `.claude-plugin/plugin.json` | Plugin manifest |
 | `.mcp.json` | MCP server |
 | `commands/` | `/gitstalk:setup`, `/gitstalk:bean-status` |
-| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, reds, conflicts and cards) |
+| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, Actions and deploys, reds, conflicts and cards) |
 | `scripts/` | Setup scripts |
 | `test/` | Script tests and the fake Gitstalk server they run against |
 
@@ -128,6 +128,7 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | Waiting in git (`refs/wait/any`, `refs/wait/all`, `-o bean=`), event-driven `-o wait` and `bean_wait` | Live |
 | `/gitstalk:setup`, SSH keys in Settings, deploy tokens | Live; git over SSH itself is **coming** (HTTPS with a token until then) |
 | MCP OAuth (`claude mcp login`, `/mcp`, `codex mcp login`) | Live: sign up or sign in with a passkey, approve the agent |
+| MCP Actions tools: `actions_workflow_list`, `actions_run_list`, `actions_run_get`, `actions_job_log`, `actions_wait_for_run`, `actions_dispatch`, `actions_rerun`, `actions_cancel`, `actions_secret_*`, `actions_variable_*`, `automation_get`, `automation_run`; the opt-in `secrets` scope; clients ask for `read collaborate write` by default | **Rolling out** (staging, gitstalk.dev) |
 | Decision-card tools | **Coming** |
 
 Update the skill, the snippet and this table when those land.

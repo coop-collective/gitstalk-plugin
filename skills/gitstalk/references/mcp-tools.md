@@ -1,7 +1,7 @@
 # MCP tools (optional coordination and context)
 
-Contents: setup; the work cycle with MCP; repository tools; read tools; collaboration tools;
-errors.
+Contents: setup and scopes; the work cycle with MCP; repository tools; Actions tools; read
+tools; collaboration tools; errors.
 
 Git is the interface: clone, branch, commit and push are always git. The tools below
 coordinate agents (claims, reserved names) and explain verdicts; none of them moves code.
@@ -11,8 +11,13 @@ coordinate agents (claims, reserved names) and explain verdicts; none of them mo
 The plugin's `.mcp.json` points the `gitstalk` server at the hosted deployment's `/mcp` with
 no auth header, so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or
 `/mcp` in a session) and approve in the browser. Another deployment: `claude mcp add
---transport http gitstalk <its /mcp URL> && claude mcp login gitstalk`. Tick **write** on the
-consent page if the agent should open beans and claim tasks. Every tool also follows the person's role on the repository: read tools need the read role, `bean_open`, `task_claim`, `task_release` and a pushing credential need the write role (`repository_access(repository)` says which you have). Without OAuth the
+--transport http gitstalk <its /mcp URL> && claude mcp login gitstalk`. The client asks for
+`read collaborate write` and the consent page ticks those; **secrets** (set Actions secrets and
+variables) is never ticked for the person: they opt in. Every tool also follows the person's
+role on the repository: read tools need the read role; `bean_open`, `task_claim`,
+`task_release` and a pushing credential the write role; running workflows the maintain role
+plus `write`; changing secrets the maintain role plus `secrets` (`repository_access(repository)`
+says which you have). Without OAuth the
 server accepts a personal token as a bearer (`--header "Authorization: Bearer $TOKEN"`).
 Deploy tokens (`bsd_`) never open MCP. Never print a token.
 
@@ -49,6 +54,28 @@ the backlog with a bean like any other file.
 credential; with no helper configured, `credential.https://<gateway host>.helper 'cache
 --timeout=3600'` keeps it in memory. Never put it in a URL, a file, a commit or the chat.
 
+## Actions tools (signed-in sessions)
+
+Gitstalk runs `.github/workflows`; a bean reaching the stalk is a push to `main`. The loop and
+secrets: `actions-deploy.md`.
+
+| Tool | Scope, role | Call it when |
+|---|---|---|
+| `actions_workflow_list(repo)` | read | Which workflows and automations exist, their triggers, dispatch inputs, problems |
+| `actions_wait_for_run(repo, bean \| run \| workflow, timeout_s?)` | read | After pushing a workflow change and out of other work: holds until the runs end (default 600 s, at most 1800); failures come with the failing step and log tail |
+| `actions_run_list(repo, workflow?, status?, event?, sha?, bean?)` | read | Runs newest first with `run_url` |
+| `actions_run_get(repo, run)` | read | Jobs, steps, durations, the beans that triggered it, `next` |
+| `actions_job_log(repo, run, job?, tail?, grep?, max_bytes?)` | read | A job's log, newest lines; default the first failed job; secrets masked |
+| `actions_dispatch(repo, workflow, inputs?)` | write, maintain | Run a `workflow_dispatch` workflow on the stalk |
+| `actions_rerun(repo, run)` | write, maintain | The whole run again (after a secret or variable fix) |
+| `actions_cancel(repo, run)` | write, maintain | Stop a queued or running run |
+| `actions_secret_list(repo)` | read, any role | Secret names (never values) and `settings_url` |
+| `actions_secret_set(repo, name, value, level?)` | secrets, maintain | Only with a value the person gave you for it; write-only, audited |
+| `actions_secret_delete(repo, name, level?)` | secrets, maintain | Only when the person asks |
+| `actions_variable_list` / `_set` / `_delete` | read / secrets, maintain | Plain configuration, `${{ vars.NAME }}` |
+| `automation_list(repo)`, `automation_get(repo, automation)` | read | Automations, their files and runs |
+| `automation_run(repo, automation)` | write, maintain | Run an automation now |
+
 ## Read tools
 
 All take `repo` (owner/name) in a signed-in session; run tokens read their own run.
@@ -79,4 +106,8 @@ All take `repo` (owner/name) in a signed-in session; run tokens read their own r
 - `… needs the write scope; reconnect the agent and tick write`: log in again (`/mcp`) and tick it.
 - `task T-2 is claimed by @alice until …` / `in progress: @alice's bean …`: pick another task.
 - `bean x is reserved by @alice`: pick another name (git refuses the push too).
+- `… needs the secrets scope …`: ask the person to add the secret at the Settings link in the
+  message (preferred), or to reconnect and tick secrets.
+- `… need the maintain role; you have the write role`: a maintainer runs it, or the person on
+  the web.
 - `the forge could not answer`: gateway unavailable; retry once after a pause.
