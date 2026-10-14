@@ -138,6 +138,41 @@ out=$(cd "$ROOT/clone" && git switch -q -c "bean/x$$" && echo more >>README && g
 status=$?
 check 'git push uses the stored credential silently' '[ $status -eq 0 ]' "$out"
 
+# --- custom host: the saved host, GITSTALK_WEB over it, the MCP line ------------------------
+HOST_FILE="$XDG_CONFIG_HOME/gitstalk/host"
+out=$(sh "$SETUP" detect 2>&1)
+check 'detect says which web app it uses and why (GITSTALK_WEB)' \
+  'printf "%s\n" "$out" | grep -qx "web: $ORIGIN (GITSTALK_WEB)"' "$out"
+check 'detect prints one mcp line naming /gitstalk:host for a non-production MCP server' \
+  '[ "$(printf "%s\n" "$out" | grep -c "^mcp: ")" -eq 1 ] && printf "%s\n" "$out" | grep -qF "mcp: this host'"'"'s MCP server is $ORIGIN/mcp; in Claude Code run /gitstalk:host $ORIGIN (then restart Claude Code and run /mcp to sign in)"' "$out"
+out=$(sh "$SETUP" verify 2>&1)
+check 'verify prints the same mcp line' 'printf "%s\n" "$out" | grep -q "^mcp: this host.s MCP server is $ORIGIN/mcp"' "$out"
+curl -fsS -X POST "$GITSTALK_WEB/__mode?mcp=https://mcp.gitstalk.io/mcp" >/dev/null
+out=$(sh "$SETUP" detect 2>&1; sh "$SETUP" verify 2>&1)
+check 'detect and verify stay silent about MCP when it is the production server' \
+  '! printf "%s\n" "$out" | grep -q "^mcp"' "$out"
+curl -fsS -X POST "$GITSTALK_WEB/__mode" >/dev/null
+out=$(env -u GITSTALK_WEB sh "$SETUP" host "$ORIGIN/" 2>&1)
+status=$?
+check 'host URL checks the host, saves it and prints the Claude Code configure line' \
+  '[ $status -eq 0 ] && [ "$(cat "$HOST_FILE")" = "$ORIGIN" ] && printf "%s\n" "$out" | grep -qx "host: saved $ORIGIN in $HOST_FILE" && printf "%s\n" "$out" | grep -qxF "claude_code: printf '"'"'%s'"'"' '"'"'{\"mcp_url\":\"$ORIGIN/mcp\"}'"'"' | claude plugin configure gitstalk@gitstalk --values-stdin"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" detect 2>&1)
+check 'without GITSTALK_WEB, detect follows the saved host and no longer repeats the mcp line' \
+  'printf "%s\n" "$out" | grep -qx "web: $ORIGIN (saved in $HOST_FILE)" && printf "%s\n" "$out" | grep -q "^git_origin: $ORIGIN" && ! printf "%s\n" "$out" | grep -q "^mcp:"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" verify smoke/demo 2>&1)
+check 'verify follows the saved host' 'printf "%s\n" "$out" | grep -q "^ls_remote: smoke/demo ok"' "$out"
+out=$(cd "$ROOT/clone" && git remote set-url origin https://example.invalid/x.git && env -u GITSTALK_WEB sh "$SETUP" remote smoke/demo 2>&1)
+check 'remote follows the saved host' '[ "$(git -C "$ROOT/clone" remote get-url origin)" = "$ORIGIN/smoke/demo.git" ]' "$out"
+out=$(GITSTALK_WEB=http://127.0.0.1:9 sh "$SETUP" detect 2>&1)
+check 'GITSTALK_WEB wins over the saved host' 'printf "%s\n" "$out" | grep -q "cannot reach http://127.0.0.1:9"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" host http://127.0.0.1:9 2>&1)
+check 'host refuses a host that does not answer and keeps the saved one' \
+  '[ "$(cat "$HOST_FILE")" = "$ORIGIN" ] && printf "%s\n" "$out" | grep -q "cannot reach http://127.0.0.1:9"' "$out"
+check 'host refuses something that is not a URL' '! sh "$SETUP" host gitstalk.dev >/dev/null 2>&1'
+out=$(sh "$SETUP" host --reset 2>&1)
+check 'host --reset forgets the saved host (back to https://gitstalk.io)' \
+  '[ ! -e "$HOST_FILE" ] && printf "%s\n" "$out" | grep -q "^host: forgotten; https://gitstalk.io"' "$out"
+
 # --- create: POST /api/repos with the stored token, then the remote --------------------------
 # curl and git are wrapped to log their arguments, so the token can be shown never to be in argv.
 mkdir -p "$ROOT/bin"

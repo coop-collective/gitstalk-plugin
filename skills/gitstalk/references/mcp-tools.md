@@ -8,10 +8,12 @@ coordinate agents (claims, reserved names) and explain verdicts; none of them mo
 
 ## Setup
 
-The plugin's `.mcp.json` points the `gitstalk` server at the hosted deployment's `/mcp` with
-no auth header, so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or
-`/mcp` in a session) and approve in the browser. Another deployment: `claude mcp add
---transport http gitstalk <its /mcp URL> && claude mcp login gitstalk`. The client asks for
+The plugin's `gitstalk` server points at the hosted deployment's `/mcp` with no auth header,
+so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or `/mcp` in a session)
+and approve in the browser. Another deployment (self-hosted, local, staging): `/gitstalk:host
+<url>` saves it for the setup script and the plugin's server (restart, then `/mcp`); other
+clients add `<url>`'s `/mcp` by hand. Two Gitstalk servers connected offer the same tool names:
+disable one in `/mcp`. The client asks for
 `read collaborate write` and the consent page ticks those (the plugin's setup flow also ticks
 **create**: may create repositories in namespaces where the person may create them); **secrets** (set Actions secrets and
 variables) is never ticked for the person: they opt in. Every tool also follows the person's

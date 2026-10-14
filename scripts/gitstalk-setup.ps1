@@ -9,10 +9,12 @@ also runs):
   gitstalk-setup.ps1 remote OWNER/REPO [DIR]
   gitstalk-setup.ps1 create [OWNER/]NAME [-Public] [-Start ID] [-Description TEXT]
   gitstalk-setup.ps1 verify [OWNER/REPO]
+  gitstalk-setup.ps1 host [URL | -Reset]
 
 Needs git and OpenSSH (Windows 10/11's built-in OpenSSH or Git for Windows' ssh-keygen).
-Private keys never leave this machine; secrets are never printed. Settings: GITSTALK_WEB,
-GITSTALK_CREDENTIAL_HELPER, GITSTALK_NO_BROWSER=1 (as for the sh script).
+Private keys never leave this machine; secrets are never printed. Settings: GITSTALK_WEB (else
+the host saved with `host URL`, else https://gitstalk.io), GITSTALK_CREDENTIAL_HELPER,
+GITSTALK_NO_BROWSER=1 (as for the sh script).
 #>
 param(
   [Parameter(Position = 0)][string]$Command = '',
@@ -24,6 +26,7 @@ param(
   [string]$Agent = '',
   [switch]$NoBrowser,
   [switch]$Public,
+  [switch]$Reset,
   [string]$Start = '',
   [string]$Description = ''
 )
@@ -33,12 +36,20 @@ foreach ($name in 'WEB', 'CREDENTIAL_HELPER', 'NO_BROWSER') {
   $legacy = [Environment]::GetEnvironmentVariable("BEANSTALK_$name")
   if (-not [Environment]::GetEnvironmentVariable("GITSTALK_$name") -and $legacy) { Set-Item "env:GITSTALK_$name" $legacy }
 }
-# The hosted service's web app (a self-hosted one sets GITSTALK_WEB, or serves this script itself).
-$Web = if ($env:GITSTALK_WEB) { $env:GITSTALK_WEB.TrimEnd('/') } else { 'https://gitstalk.io' }
+$DefaultWeb = 'https://gitstalk.io'
+$DefaultMcpUrl = 'https://mcp.gitstalk.io/mcp'
 $ConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } elseif ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME '.config' }
 $ConfigDir = Join-Path $ConfigRoot 'gitstalk'
 # A machine set up before the rename keeps its remembered key where it was.
 if (-not (Test-Path $ConfigDir) -and (Test-Path (Join-Path $ConfigRoot 'beanstalk'))) { $ConfigDir = Join-Path $ConfigRoot 'beanstalk' }
+$HostFile = Join-Path $ConfigDir 'host'
+$McpFile = Join-Path $ConfigDir 'mcp_url'
+# The web app: GITSTALK_WEB, else the host saved with `host URL`, else the hosted service.
+$SavedHost = if (Test-Path $HostFile) { ([string](Get-Content $HostFile -TotalCount 1)).Trim() } else { '' }
+if ($env:GITSTALK_WEB) { $Web = $env:GITSTALK_WEB; $WebSource = 'GITSTALK_WEB' }
+elseif ($SavedHost) { $Web = $SavedHost; $WebSource = "saved in $HostFile" }
+else { $Web = $DefaultWeb; $WebSource = 'default' }
+$Web = $Web.TrimEnd('/')
 $IsWin = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
 $OnePasswordPipe = '\\.\pipe\openssh-ssh-agent'
 # An empty argument for native commands: PowerShell 7.3+ passes '' as is; older ones drop it.
@@ -48,7 +59,8 @@ function Say([string]$Text) { Write-Output $Text }
 function Fail([string]$Text) { [Console]::Error.WriteLine("gitstalk: $Text"); exit 1 }
 
 function Get-SetupConfig {
-  try { $config = Invoke-RestMethod -Uri "$Web/api/setup" -TimeoutSec 20 } catch { Fail "cannot reach $Web (check GITSTALK_WEB and the network)" }
+  try { $config = Invoke-RestMethod -Uri "$Web/api/setup" -TimeoutSec 20 } catch { Fail "cannot reach $Web (check GITSTALK_WEB, the saved host and the network)" }
+  if (-not $config.git_origin) { Fail "$Web/api/setup did not name a git origin" }
   $origin = $config.git_origin.TrimEnd('/')
   $uri = [Uri]$origin
   [pscustomobject]@{
@@ -56,6 +68,7 @@ function Get-SetupConfig {
     Proto = $uri.Scheme
     Host = $uri.Authority
     SshHost = if ($config.ssh_host) { [string]$config.ssh_host } else { '' }
+    McpUrl = if ($config.mcp_url) { [string]$config.mcp_url } else { '' }
   }
 }
 
@@ -97,8 +110,21 @@ function Write-Option([string]$Source, [string]$Line, [string]$Where) {
   Say ("option`t{0}`t{1}`t{2}`t{3}`t{4}" -f $Source, (Get-Fingerprint $Line), $parts[0], $comment, $Where)
 }
 
+# One line when this host's MCP server is not the one the plugin uses by default and the
+# person has not saved it with `host` (which prints how to point Claude Code at it).
+function Write-McpHint($Config) {
+  if (-not $Config.McpUrl -or $Config.McpUrl -eq $DefaultMcpUrl) { return }
+  if ((Test-Path $McpFile) -and ([string](Get-Content $McpFile -TotalCount 1)).Trim() -eq $Config.McpUrl) { return }
+  Say "mcp: this host's MCP server is $($Config.McpUrl); in Claude Code run /gitstalk:host $Web (then restart Claude Code and run /mcp to sign in)"
+}
+
+function Write-ClaudeCodeLine([string]$McpUrl) {
+  Say ("claude_code: printf '%s' '{{""mcp_url"":""{0}""}}' | claude plugin configure gitstalk@gitstalk --values-stdin" -f $McpUrl)
+}
+
 function Invoke-Detect {
   Say "platform: $(Get-Platform)"
+  Say "web: $Web ($WebSource)"
   $keygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
   if ($keygen) { Say "ssh_keygen: yes ($((& ssh -V 2>&1 | Select-Object -First 1)))" } else { Say 'ssh_keygen: no (install OpenSSH: Settings > Optional features, or Git for Windows)' }
   $opener = Get-BrowserOpener
@@ -109,6 +135,7 @@ function Invoke-Detect {
   Say "ssh_host: $(if ($config.SshHost) { $config.SshHost } else { 'none yet (setup uses HTTPS with a token until SSH is live)' })"
   $helper = & git config --get-urlmatch credential.helper "$($config.Proto)://$($config.Host)/" 2>$null
   Say "credential_helper: $(if ($helper) { $helper } else { 'none' })"
+  Write-McpHint $config
   $op = Get-OnePasswordSocket
   if ($op) { foreach ($line in Get-AgentLines $op) { Write-Option '1password' $line $op } }
   if ($env:SSH_AUTH_SOCK -and $env:SSH_AUTH_SOCK -ne $op) {
@@ -272,6 +299,7 @@ function Invoke-Verify {
   $config = Get-SetupConfig
   $token = Get-StoredToken $config
   Say "whoami: @$(Get-Handle $config $token)"
+  Write-McpHint $config
   if ($Repo) {
     & git ls-remote (Get-RepoUrl $config $Repo) *> $null
     if ($LASTEXITCODE -ne 0) { Fail "git ls-remote $Repo failed" }
@@ -319,6 +347,38 @@ function Invoke-Create {
   Invoke-Remote
 }
 
+# Saves the host every later run uses (when GITSTALK_WEB is unset), after checking it answers.
+function Invoke-Host {
+  if ($Reset) {
+    Remove-Item $HostFile, $McpFile -Force -ErrorAction SilentlyContinue
+    Say "host: forgotten; $DefaultWeb from now on"
+    Write-ClaudeCodeLine $DefaultMcpUrl
+    return
+  }
+  if (-not $Repo) {
+    $config = Get-SetupConfig
+    Say "web: $Web ($WebSource)"
+    Say "mcp_url: $(if ($config.McpUrl) { $config.McpUrl } else { 'none' })"
+    return
+  }
+  if ($Repo -notmatch '^https?://') { Fail 'host: pass a URL like https://gitstalk.dev or http://localhost:5173, or -Reset' }
+  $script:Web = $Repo.TrimEnd('/')
+  $config = Get-SetupConfig
+  New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  if ($script:Web -eq $DefaultWeb) {
+    Remove-Item $HostFile, $McpFile -Force -ErrorAction SilentlyContinue
+    Say "host: $($script:Web) (the default; nothing saved)"
+  } else {
+    Set-Content -Path $HostFile -Value $script:Web
+    if ($config.McpUrl) { Set-Content -Path $McpFile -Value $config.McpUrl } else { Remove-Item $McpFile -Force -ErrorAction SilentlyContinue }
+    Say "host: saved $($script:Web) in $HostFile"
+  }
+  Say "git_origin: $($config.Origin)"
+  Say "mcp_url: $(if ($config.McpUrl) { $config.McpUrl } else { 'none' })"
+  if ($config.McpUrl) { Write-ClaudeCodeLine $config.McpUrl }
+  if ($env:GITSTALK_WEB -and $env:GITSTALK_WEB.TrimEnd('/') -ne $script:Web) { Say "note: GITSTALK_WEB=$($env:GITSTALK_WEB) is set and still wins in this shell" }
+}
+
 switch ($Command) {
   'detect' { Invoke-Detect }
   'generate' { Invoke-Generate }
@@ -326,5 +386,6 @@ switch ($Command) {
   'remote' { Invoke-Remote }
   'create' { Invoke-Create }
   'verify' { Invoke-Verify }
-  default { [Console]::Error.WriteLine('usage: gitstalk-setup.ps1 detect | generate | register | remote OWNER/REPO [DIR] | create [OWNER/]NAME [-Public] | verify [OWNER/REPO]'); exit 2 }
+  'host' { Invoke-Host }
+  default { [Console]::Error.WriteLine('usage: gitstalk-setup.ps1 detect | generate | register | remote OWNER/REPO [DIR] | create [OWNER/]NAME [-Public] | verify [OWNER/REPO] | host [URL | -Reset]'); exit 2 }
 }

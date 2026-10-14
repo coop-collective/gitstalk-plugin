@@ -30,8 +30,8 @@ and ask.
    token git already keeps for the Gitstalk host (through `git credential fill`, never printed),
    calls `POST <web>/api/repos`, prints `created: <owner>/<name> (<visibility>)` and
    `web: <url>`, then sets `origin` like `remote` (or clones it when not in a repository). On
-   409 it says `exists:` and still connects the remote. `GITSTALK_WEB` picks the deployment
-   (`https://gitstalk.dev` is staging).
+   409 it says `exists:` and still connects the remote. The host is `GITSTALK_WEB`, else the one
+   saved with `host <url>` (`/gitstalk:host`), else gitstalk.io (`https://gitstalk.dev` is staging).
 3. **Push to create**: `git push https://<host>/<owner>/<name>.git` (or `origin` pointing
    there) for a name that does not exist creates it, private, when the credential has `create`
    and the namespace allows it; the `remote:` lines print its web URL. A name that was used

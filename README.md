@@ -52,6 +52,7 @@ codex mcp login gitstalk                      # Codex keeps the credential in th
 
 A browser tab opens: sign up or sign in with a passkey and approve the agent; the `whoami` tool
 then names you. The MCP server is optional; git alone is enough to push and read verdicts.
+Another deployment: see [Custom host](#custom-host-self-hosted-local-staging).
 
 ## What it adds
 
@@ -60,8 +61,9 @@ then names you. The MCP server is optional; git alone is enough to push and read
 | Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, Actions (workflows run when a bean reaches the stalk; wait, read the failing log, fix; secrets), the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
 | `/gitstalk:setup [owner/repo]` | Connects git on this machine to your account: lists the SSH keys you have (1Password's SSH agent, ssh-agent, `~/.ssh`) or makes one, asks which to use, and opens Gitstalk once to approve it (a code to enter on another device when there is no browser). Only a public key is sent. |
 | `/gitstalk:new [owner/]name [--public]` | Creates a Gitstalk repository (private unless you ask; it asks you first for a public one or one in an organization), connects this directory as `origin` and pushes its work as the first bean. Uses the token git already keeps, through the setup script's `create` subcommand. |
+| `/gitstalk:host <url>` | Uses a custom host (self-hosted, local or staging) for git setup and the MCP server, saved across sessions; `--reset` goes back to gitstalk.io. |
 | `/gitstalk:bean-status [bean]` | Where a bean is (checking, landed, sent back, reverted, on the stalk) and the single next action. |
-| `.mcp.json` | The `gitstalk` MCP server (HTTP, OAuth). |
+| `.mcp.json` | The `gitstalk` MCP server (HTTP, OAuth) at the plugin's `mcp_url` option (default `https://mcp.gitstalk.io/mcp`). Codex reads `.codex-plugin/plugin.json` and the literal `.codex-mcp.json` instead. |
 | `AGENTS-snippet.md` | The same guidance, compact, to paste into a repository's `AGENTS.md` for agents without plugins (Cursor, Copilot, Gemini CLI). |
 
 Until Gitstalk's SSH endpoint is live, setup also stores an HTTPS token in your OS keychain
@@ -73,8 +75,8 @@ through git's own credential helper, for the Gitstalk host only, and says so.
 `scripts/gitstalk-setup.ps1` (PowerShell, Windows) are what `/gitstalk:setup` runs locally from
 the plugin. The copies served at `https://gitstalk.io/setup.sh` and `/setup.ps1` are canonical
 for agents without the plugin and live in the service repository
-(`packages/web/src/setup/scripts/`); change both together. `GITSTALK_WEB` points the script at
-another deployment: `GITSTALK_WEB=https://gitstalk.dev` targets staging.
+(`packages/web/src/setup/scripts/`); change both together. The scripts use `GITSTALK_WEB`, else
+the host saved with `host <url>`, else `https://gitstalk.io` (see Custom host).
 
 `create [owner/]name [--public] [--start <id>] [--description <text>]` creates a repository with
 the HTTPS token git already keeps for the Gitstalk host (read through `git credential fill`,
@@ -82,6 +84,50 @@ handed to curl on stdin, never printed or put on a command line), calls `POST <w
 prints `created: <owner>/<name> (<visibility>)` and `web: <url>`, and then connects `origin` as
 `remote` does. A 409 says the repository exists and still connects it. `register` asks for the
 `create` scope along with read and write.
+
+## Custom host (self-hosted, local, staging)
+
+By default everything talks to `https://gitstalk.io` and its MCP server
+`https://mcp.gitstalk.io/mcp`. To use another deployment, such as staging at
+`https://gitstalk.dev` or a local one at `http://localhost:5173`:
+
+```bash
+/gitstalk:host https://gitstalk.dev        # in Claude Code; /gitstalk:host --reset goes back
+```
+
+It runs `gitstalk-setup.sh host <url>`, which checks that `<url>/api/setup` answers and saves
+the host in `~/.config/gitstalk/host` (`$XDG_CONFIG_HOME`; `%APPDATA%\gitstalk\host` for the
+PowerShell script). Every later `detect`, `register`, `remote`, `create` and `verify` uses it.
+The order is `GITSTALK_WEB` (one shell or one run), then the saved host, then gitstalk.io;
+`detect` prints `web: <url> (<why>)`. The command then saves the host's MCP URL (from
+`/api/setup`) in the plugin's `mcp_url` option with
+`claude plugin configure gitstalk@gitstalk --values-stdin`. Claude Code keeps it in your user
+settings, and `/config` shows it. Restart Claude Code and run `/mcp` to sign in on that host,
+then run `/gitstalk:setup` once to connect git there (each host has its own accounts and tokens).
+Without the plugin: `curl -fsSL <url>/setup.sh | sh -s -- host <url>`, then
+`claude mcp add --transport http gitstalk <url's mcp_url>`.
+
+`detect` and `verify` print one `mcp:` line when the host's MCP server is not the production
+one and was not saved with `host`, naming the `/gitstalk:host` command to run.
+
+**Two servers, the same tools.** If you also added a Gitstalk MCP server by hand
+(`claude mcp add … gitstalk-dev …`) while the plugin's server is connected, both offer the same
+tool names and an agent may call the wrong host. Disable one of them in `/mcp`.
+
+**Codex** has no plugin options, so its plugin server stays on production. For another host,
+run `codex mcp add gitstalk-<name> --url <mcp_url>`, then `codex mcp login gitstalk-<name>`,
+and turn the plugin's server off in `~/.codex/config.toml` with
+`[plugins."gitstalk@gitstalk".mcp_servers.gitstalk]` and `enabled = false`. The setup script's saved host works
+the same under Codex.
+
+**Debugging Actions against a custom host.** Actions run on whichever host the bean is pushed
+to, so check both halves point at it. `git remote get-url origin` should name the custom host,
+and `verify owner/repo` should say `whoami:`. `whoami` in MCP should name the same account.
+Push a bean, then call `actions_wait_for_run(repo, bean)` and `actions_job_log` for the failing
+step, as on production. An empty run list usually means the MCP server and `origin` are on
+different hosts (check `/mcp` for a second Gitstalk server), or the workflow's `on:` does not
+match (`push` to `main` runs once the bean lands). The Actions tools are rolling out on staging
+first (see the status table).
 
 ## Creating repositories
 
@@ -109,8 +155,9 @@ organization, and to push the first work as a bean, never to the stalk.
   `GIT_CONFIG_VALUE_0='!f() { echo "username=x"; echo "password=$GITSTALK_TOKEN"; }; f'`
   (the repository page, tab "Env vars", fills it in).
 - **Another MCP client:** `claude mcp add --transport http gitstalk <url>` or
-  `codex mcp add gitstalk --url <url>`. The URL in `.mcp.json` is literal because Codex does not
-  expand `${VAR:-default}` there; a self-hosted deployment adds its own server this way.
+  `codex mcp add gitstalk --url <url>`. Codex substitutes neither `${VAR}` nor
+  `${user_config.*}` in a plugin's MCP file, so it gets its own manifest
+  (`.codex-plugin/plugin.json`) with a literal URL (`.codex-mcp.json`).
 
 ## Development
 
@@ -136,9 +183,10 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | Path | What |
 |---|---|
 | `.claude-plugin/marketplace.json` | The marketplace (one plugin, `gitstalk`, at the repository root); Claude Code and Codex both read it |
-| `.claude-plugin/plugin.json` | Plugin manifest |
-| `.mcp.json` | MCP server |
-| `commands/` | `/gitstalk:setup`, `/gitstalk:new`, `/gitstalk:bean-status` |
+| `.claude-plugin/plugin.json` | Plugin manifest for Claude Code (with the `mcp_url` option) |
+| `.codex-plugin/plugin.json`, `.codex-mcp.json` | Codex's manifest (same metadata and version) and its MCP server at a literal URL |
+| `.mcp.json` | MCP server for Claude Code (`${user_config.mcp_url}`) |
+| `commands/` | `/gitstalk:setup`, `/gitstalk:new`, `/gitstalk:host`, `/gitstalk:bean-status` |
 | `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, Actions and deploys, new repositories, reds, conflicts and cards) |
 | `scripts/` | Setup scripts |
 | `test/` | Script tests and the fake Gitstalk server they run against |

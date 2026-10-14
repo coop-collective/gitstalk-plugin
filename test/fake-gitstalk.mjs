@@ -6,7 +6,8 @@
 //
 //   node fake-gitstalk.mjs <port> <repos dir> [public origin]
 //   GET /__state           what the key requests and create calls carried (for assertions)
-//   POST /__mode?deny=1    the next request is declined;  ?ssh=<host>  the SSH endpoint is live
+//   POST /__mode?deny=1    the next request is declined;  ?ssh=<host>  the SSH endpoint is live;
+//                          ?mcp=<url>  /api/setup names that MCP server (default <origin>/mcp)
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import http from 'node:http';
@@ -21,6 +22,7 @@ const state = {
   deny: false,
 };
 let sshHost = process.env.FAKE_SSH_HOST ?? '';
+let mcpUrl = '';
 
 const server = http.createServer((req, res) => {
   void handle(req, res);
@@ -36,7 +38,7 @@ async function handle(req, res) {
         web: origin,
         git_origin: origin,
         ssh_host: sshHost === '' ? null : sshHost,
-        mcp_url: `${origin}/mcp`,
+        mcp_url: mcpUrl === '' ? `${origin}/mcp` : mcpUrl,
       });
     if (url.pathname === '/api/ssh-keys/request')
       return keyRequest(res, origin, JSON.parse(body.toString()));
@@ -48,7 +50,8 @@ async function handle(req, res) {
     if (url.pathname === '/__mode') {
       state.deny = url.searchParams.get('deny') === '1';
       sshHost = url.searchParams.get('ssh') ?? '';
-      return json(res, 200, { deny: state.deny, ssh_host: sshHost });
+      mcpUrl = url.searchParams.get('mcp') ?? '';
+      return json(res, 200, { deny: state.deny, ssh_host: sshHost, mcp_url: mcpUrl });
     }
     if (url.pathname === '/v1/whoami') {
       const token = tokenOf(req);
