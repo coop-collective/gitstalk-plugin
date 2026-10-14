@@ -16,13 +16,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Manifests are valid JSON and agree on the MCP server
+      - name: Manifests are valid JSON and agree on the MCP server and version
         run: |
           node -e '
             const fs = require("fs");
-            for (const f of [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", ".mcp.json", "package.json"]) JSON.parse(fs.readFileSync(f, "utf8"));
-            const mcp = JSON.parse(fs.readFileSync(".mcp.json", "utf8"));
-            if (mcp.mcpServers.gitstalk.url !== "https://mcp.gitstalk.io/mcp") throw new Error("unexpected MCP url");
+            const read = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
+            for (const f of [".claude-plugin/marketplace.json", "package.json"]) read(f);
+            const claude = read(".claude-plugin/plugin.json"), codex = read(".codex-plugin/plugin.json");
+            const prod = "https://mcp.gitstalk.io/mcp";
+            if (read(".mcp.json").mcpServers.gitstalk.url !== "${user_config.mcp_url}") throw new Error("Claude Code MCP url must be the mcp_url option");
+            if (claude.userConfig.mcp_url.default !== prod) throw new Error("mcp_url must default to production");
+            if (codex.mcpServers !== "./.codex-mcp.json" || read(".codex-mcp.json").mcpServers.gitstalk.url !== prod) throw new Error("Codex needs a literal production MCP url");
+            for (const k of ["name", "version", "description"]) if (claude[k] !== codex[k]) throw new Error(`manifests disagree on ${k}`);
           '
       - name: Validate with Claude Code
         run: npx -y @anthropic-ai/claude-code plugin validate .
