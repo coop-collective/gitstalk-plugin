@@ -138,6 +138,64 @@ out=$(cd "$ROOT/clone" && git switch -q -c "bean/x$$" && echo more >>README && g
 status=$?
 check 'git push uses the stored credential silently' '[ $status -eq 0 ]' "$out"
 
+# --- create: POST /api/repos with the stored token, then the remote --------------------------
+# curl and git are wrapped to log their arguments, so the token can be shown never to be in argv.
+mkdir -p "$ROOT/bin"
+for tool in curl git; do
+  real=$(command -v "$tool")
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s $*" >>"%s/argv.log"\nexec "%s" "$@"\n' "$tool" "$ROOT" "$real" >"$ROOT/bin/$tool"
+  chmod +x "$ROOT/bin/$tool"
+done
+: >"$ROOT/argv.log"
+# Runs the setup script with the wrappers first on PATH, from DIR; keeps every output line.
+create_in() {
+  dir=$1
+  shift
+  out=$(cd "$dir" && PATH="$ROOT/bin:$PATH" sh "$SETUP" create "$@" 2>&1)
+  status=$?
+  printf '%s\n' "$out" >>"$ROOT/create.out"
+}
+TOKEN=$(printf 'protocol=%s\nhost=%s\n\n' "${ORIGIN%%://*}" "$HOST" | git credential fill | sed -n 's/^password=//p')
+NEW="new-$(date +%s)-$$"
+mkdir -p "$ROOT/newrepo" && git -C "$ROOT/newrepo" init -q
+(cd "$ROOT/newrepo" && echo first >README && git add README && git commit -qm 'Start the project')
+create_in "$ROOT/newrepo" "smoke/$NEW" --description 'a "quoted" test'
+check 'create (201) prints the new repository, private, and its web page' \
+  '[ $status -eq 0 ] && printf "%s\n" "$out" | grep -q "^created: smoke/$NEW (private)$" && printf "%s\n" "$out" | grep -q "^web: $ORIGIN/smoke/$NEW$"' "$out"
+check 'create then points origin at the new repository' \
+  '[ "$(git -C "$ROOT/newrepo" remote get-url origin)" = "$ORIGIN/smoke/$NEW.git" ]' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'create sent the stored token as a Bearer, private by default, with the description' \
+  'printf "%s" "$state" | grep -q "\"name\":\"$NEW\",\"owner\":\"smoke\",\"visibility\":\"private\",\"description\":\"a \\\\\"quoted\\\\\" test\",\"bearer\":true,\"authorized\":true"' "$state"
+out2=$(cd "$ROOT/newrepo" && git push -q origin HEAD:refs/heads/bean/first 2>&1)
+status=$?
+check 'the first commit pushes to the new repository as a bean' '[ $status -eq 0 ]' "$out2"
+create_in "$ROOT/newrepo" "smoke/$NEW"
+check 'create (409) says it exists and still connects the remote' \
+  '[ $status -eq 0 ] && printf "%s\n" "$out" | grep -q "^exists: smoke/$NEW already exists" && printf "%s\n" "$out" | grep -q "^remote: origin is $ORIGIN/smoke/$NEW.git"' "$out"
+create_in "$ROOT" "someorg/x$$" --public
+check 'create (403) fails, names the namespace and the create scope' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "not allowed to create someorg/x$$" && printf "%s\n" "$out" | grep -q "create scope"' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'create --public asks for a public repository' \
+  'printf "%s" "$state" | grep -q "\"name\":\"x$$\",\"owner\":\"someorg\",\"visibility\":\"public\""' "$state"
+create_in "$ROOT" smoke/.bad
+check 'create (422) fails and says the name is invalid' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "invalid repository name .bad"' "$out"
+mkdir -p "$ROOT/bare" && git -C "$ROOT/bare" init -q
+create_in "$ROOT/bare" "b$$" --start empty
+check 'create NAME without an owner creates it under the person, with the starter' \
+  'printf "%s\n" "$out" | grep -q "^created: smoke/b$$ (private)" && curl -fsS "$GITSTALK_WEB/__state" | grep -q "\"name\":\"b$$\",\"owner\":\"smoke\",\"visibility\":\"private\",\"start\":\"empty\""' "$out"
+check 'the token is in no command line and no output of create' \
+  '[ -n "$TOKEN" ] && grep -q "^curl .*/api/repos" "$ROOT/argv.log" && ! grep -qF "$TOKEN" "$ROOT/argv.log" "$ROOT/create.out" && ! grep -q "bsu_" "$ROOT/argv.log" "$ROOT/create.out"' "$(cat "$ROOT/argv.log")"
+out=$(cd "$ROOT" && GITSTALK_CREDENTIAL_HELPER= HOME="$ROOT/nobody" GIT_CONFIG_GLOBAL=/dev/null sh "$SETUP" create smoke/none 2>&1)
+status=$?
+check 'create without a stored credential says to run register' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "run register"' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'register asks for the create scope with read and write' \
+  'printf "%s" "$state" | grep -q "\"scopes\":\[\"read\",\"write\",\"create\"\]"' "$state"
+
 # --- register from the agent without a browser, deny, headless -----------------------------
 : >"$ROOT/browser.log"
 out=$(sh "$SETUP" register --agent-key "$(fingerprint "$ROOT/agent_key.pub")" --no-browser 2>&1)
@@ -159,7 +217,7 @@ curl -fsS -X POST "$GITSTALK_WEB/__mode?ssh=ssh.gitstalk.test" >/dev/null
 out=$(sh "$SETUP" register --agent-key "$(fingerprint "$ROOT/op_key.pub")" --agent "$OP_SOCK" --no-browser 2>&1)
 state=$(curl -fsS "$GITSTALK_WEB/__state")
 check 'with SSH live, register asks for no HTTPS token' \
-  'printf "%s\n" "$out" | grep -q "^approved" && printf "%s" "$state" | tr "}" "\n" | tail -n 2 | grep -q "\"https_token\":false"' "$out"
+  'printf "%s\n" "$out" | grep -q "^approved" && printf "%s" "$state" | sed "s/,\"creates\":.*//" | tr "}" "\n" | tail -n 2 | grep -q "\"https_token\":false"' "$out"
 mkdir -p "$ROOT/sshrepo" && git -C "$ROOT/sshrepo" init -q
 out=$(cd "$ROOT/sshrepo" && sh "$SETUP" remote smoke/demo 2>&1)
 check 'with SSH live, remote uses ssh:// and points ssh at the chosen agent key for that host only' \

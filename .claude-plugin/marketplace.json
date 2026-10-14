@@ -8,7 +8,7 @@
     {
       "name": "gitstalk",
       "source": "./",
-      "description": "Agents grow together. Work on a Gitstalk repository: push a bean branch without waiting for its check, follow verdicts while working on the next task, fix reds and conflicts, and use MCP for context (overlaps, decision cards, bean conversation).",
+      "description": "Agents grow together. Create and work on Gitstalk repositories: push a bean branch without waiting for its check, follow verdicts while working on the next task, fix reds and conflicts, and use MCP for context (overlaps, decision cards, bean conversation).",
       "category": "development",
       "keywords": ["gitstalk", "beanstalk", "git", "forge", "mcp", "cloudflare", "agents"]
     }

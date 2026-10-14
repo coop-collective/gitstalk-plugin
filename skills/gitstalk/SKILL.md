@@ -1,12 +1,11 @@
 ---
 name: gitstalk
-description: How to commit, push and land work on a Gitstalk repository, an agent-first git forge where agents push small bean/<name> branches that land on the sprout after a pre-land check, and which runs GitHub Actions workflows (a bean reaching the stalk is a push to main). Use whenever the git remote (origin) is a Gitstalk host (https://<gitstalk host>/<owner>/<repo>.git, or a repo with sprout and stalk branches): before you branch, commit, push or submit work there, when you hand tasks to subagents, when a bean comes back red or conflicted, when you add, deploy with or debug .github/workflows (CI, deploys, secrets such as CLOUDFLARE_API_TOKEN), or when asked to start, submit, fix or check a bean. Check `git remote get-url origin` first; skip this skill when origin is GitHub, GitLab or another forge. Covers pushing without waiting, one blocking git wait when out of work (never sleep-polling), subagents, stacking, rebasing on the sprout, protected tests, Actions runs, logs and secrets, and the gitstalk MCP tools.
+description: How to commit, push and land work on a Gitstalk repository, an agent-first git forge where agents push small bean/<name> branches that land on the sprout after a pre-land check, and which runs GitHub Actions workflows (a bean reaching the stalk is a push to main). Use whenever the git remote (origin) is a Gitstalk host (https://<gitstalk host>/<owner>/<repo>.git, or a repo with sprout and stalk branches): before you branch, commit, push or submit work there, when you hand tasks to subagents, when a bean comes back red or conflicted, when you add, deploy with or debug .github/workflows (CI, deploys, secrets such as CLOUDFLARE_API_TOKEN), or when asked to start, submit, fix or check a bean, or to create a repository there. Check `git remote get-url origin` first; skip this skill when origin is GitHub, GitLab or another forge. Covers pushing without waiting, one blocking git wait when out of work (never sleep-polling), subagents, stacking, protected tests, Actions and secrets, new repositories, MCP tools.
 ---
 
 # Working on a Gitstalk repository
 
-Git is the interface. The MCP server is optional context. The client needs one thing: git
-connected to the person's account (below).
+Git is the interface; the MCP server is optional context. Git must be connected (below).
 
 Words: a **bean** is one small change on a branch `bean/<short-name>`. The **sprout** is the
 latest integrated state (every landed bean); build on it. The **stalk** is the validated line
@@ -20,6 +19,12 @@ Code; other agents run the same script, `<web>/setup.sh`). It finds the person's
 makes one, opens Gitstalk once to approve it, and points git at Gitstalk. Never ask the person
 to paste a password or token into the chat, and never put one in a remote URL. CI and scripts
 use a deploy token: `GITSTALK_TOKEN` plus `GIT_CONFIG_*` (the repository page, tab "Env vars").
+
+## A new repository
+MCP `repo_create(name, visibility?, owner?, start?, description?)` (`create` scope), or
+`/gitstalk:new <name>` (sets `origin` too), or a first `git push` to a new name: private by
+default. **Ask the person first** to make one public or to create one in an organization. Then
+push work as beans, never to the stalk: `references/new-repo.md`.
 
 ## The flow: push, then keep working
 
@@ -94,6 +99,8 @@ options and every `remote:` line: `references/push-flow.md`.
   Never edit, delete, skip or weaken one to get green. You may update other existing tests
   only when your change intentionally alters their expectations; say so in the commit message.
 - Never print or commit the credential, and do not paste `git remote -v` output that holds it.
+- Before you push: `git diff origin/sprout --stat` shows only this intent's files; your tests
+  pass, protected tests untouched; the message states the intent; rebased on `origin/sprout`.
 
 ## Reading results
 
@@ -140,10 +147,3 @@ give. Tools take the repository as `repo: "owner/name"`.
   your approach contradicts another bean's.
 
 Never use MCP to move code. Tools and their scopes: `references/mcp-tools.md`.
-
-## Before you push
-
-1. `git diff origin/sprout --stat`: only the files this one intent needs?
-2. Your tests pass locally; protected tests untouched.
-3. The commit message states the intent.
-4. Rebased on the current `origin/sprout`.

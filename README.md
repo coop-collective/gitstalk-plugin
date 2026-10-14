@@ -59,6 +59,7 @@ then names you. The MCP server is optional; git alone is enough to push and read
 |---|---|
 | Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, Actions (workflows run when a bean reaches the stalk; wait, read the failing log, fix; secrets), the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
 | `/gitstalk:setup [owner/repo]` | Connects git on this machine to your account: lists the SSH keys you have (1Password's SSH agent, ssh-agent, `~/.ssh`) or makes one, asks which to use, and opens Gitstalk once to approve it (a code to enter on another device when there is no browser). Only a public key is sent. |
+| `/gitstalk:new [owner/]name [--public]` | Creates a Gitstalk repository (private unless you ask; it asks you first for a public one or one in an organization), connects this directory as `origin` and pushes its work as the first bean. Uses the token git already keeps, through the setup script's `create` subcommand. |
 | `/gitstalk:bean-status [bean]` | Where a bean is (checking, landed, sent back, reverted, on the stalk) and the single next action. |
 | `.mcp.json` | The `gitstalk` MCP server (HTTP, OAuth). |
 | `AGENTS-snippet.md` | The same guidance, compact, to paste into a repository's `AGENTS.md` for agents without plugins (Cursor, Copilot, Gemini CLI). |
@@ -73,7 +74,31 @@ through git's own credential helper, for the Gitstalk host only, and says so.
 the plugin. The copies served at `https://gitstalk.io/setup.sh` and `/setup.ps1` are canonical
 for agents without the plugin and live in the service repository
 (`packages/web/src/setup/scripts/`); change both together. `GITSTALK_WEB` points the script at
-another deployment.
+another deployment: `GITSTALK_WEB=https://gitstalk.dev` targets staging.
+
+`create [owner/]name [--public] [--start <id>] [--description <text>]` creates a repository with
+the HTTPS token git already keeps for the Gitstalk host (read through `git credential fill`,
+handed to curl on stdin, never printed or put on a command line), calls `POST <web>/api/repos`,
+prints `created: <owner>/<name> (<visibility>)` and `web: <url>`, and then connects `origin` as
+`remote` does. A 409 says the repository exists and still connects it. `register` asks for the
+`create` scope along with read and write.
+
+## Creating repositories
+
+Agents and people create repositories three ways, each needing the `create` scope ("may create
+repositories in namespaces where the person may create them"; setup asks for it):
+
+- MCP `repo_create({ name, owner?, visibility?, start?, description? })`: owner defaults to
+  you, visibility to private, start to `empty`. Listed only for sessions with `create`.
+- `POST <web>/api/repos` with `Authorization: Bearer <personal token with create>` (what the
+  setup script's `create` and `/gitstalk:new` use): 201, 409 `exists`, 403 not allowed, 422
+  invalid name.
+- Push to create: `git push` to `https://<host>/<owner>/<name>.git` that does not exist
+  creates it, private, and prints its web URL in `remote:` lines. A name used before or renamed
+  away is refused; a credential without `create` gets a hint to use `repo_create` or `<web>/new`.
+
+The skill tells agents to ask the person first before creating a public repository or one in an
+organization, and to push the first work as a bean, never to the stalk.
 
 ## Without a plugin
 
@@ -113,8 +138,8 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | `.claude-plugin/marketplace.json` | The marketplace (one plugin, `gitstalk`, at the repository root); Claude Code and Codex both read it |
 | `.claude-plugin/plugin.json` | Plugin manifest |
 | `.mcp.json` | MCP server |
-| `commands/` | `/gitstalk:setup`, `/gitstalk:bean-status` |
-| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, Actions and deploys, reds, conflicts and cards) |
+| `commands/` | `/gitstalk:setup`, `/gitstalk:new`, `/gitstalk:bean-status` |
+| `skills/gitstalk/` | `SKILL.md` plus `references/` (push flow, MCP tools, Actions and deploys, new repositories, reds, conflicts and cards) |
 | `scripts/` | Setup scripts |
 | `test/` | Script tests and the fake Gitstalk server they run against |
 
@@ -129,6 +154,7 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | `/gitstalk:setup`, SSH keys in Settings, deploy tokens | Live; git over SSH itself is **coming** (HTTPS with a token until then) |
 | MCP OAuth (`claude mcp login`, `/mcp`, `codex mcp login`) | Live: sign up or sign in with a passkey, approve the agent |
 | MCP Actions tools: `actions_workflow_list`, `actions_run_list`, `actions_run_get`, `actions_job_log`, `actions_wait_for_run`, `actions_dispatch`, `actions_rerun`, `actions_cancel`, `actions_secret_*`, `actions_variable_*`, `automation_get`, `automation_run`; the opt-in `secrets` scope; clients ask for `read collaborate write` by default | **Rolling out** (staging, gitstalk.dev) |
+| Creating repositories: the `create` scope, `repo_create`, `POST /api/repos`, push-to-create; `setup.sh create`, `/gitstalk:new` | **Rolling out** (staging, gitstalk.dev; server PR `repo-create` in coop-collective/gitstalk) |
 | Decision-card tools | **Coming** |
 
 Update the skill, the snippet and this table when those land.

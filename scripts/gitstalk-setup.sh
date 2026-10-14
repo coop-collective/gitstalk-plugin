@@ -7,6 +7,9 @@
 #   gitstalk-setup.sh register (--key PUB | --agent-key FINGERPRINT [--agent SOCKET]) [--no-browser]
 #                                                  add the key to your account (browser approval)
 #   gitstalk-setup.sh remote OWNER/REPO [DIR]     clone it, or point an existing clone at Gitstalk
+#   gitstalk-setup.sh create [OWNER/]NAME [--public] [--start ID] [--description TEXT]
+#                                                  create a repository (private unless --public),
+#                                                  then connect it as remote does
 #   gitstalk-setup.sh verify [OWNER/REPO]         prove git reaches your account (and the repo)
 #
 # Needs only sh, curl, git and OpenSSH (ssh-keygen >= 8.0). Private keys never leave this
@@ -217,7 +220,8 @@ cmd_register() {
   remember_key "$key" "$agent" "$line"
   wants_token=false
   [ -z "$SSH_HOST" ] && wants_token=true
-  body="{\"public_key\":$(json_string "$line"),\"machine\":$(json_string "$(machine_name)"),\"https_token\":$wants_token}"
+  # The token git keeps may also create repositories (the create scope; consent shows it ticked).
+  body="{\"public_key\":$(json_string "$line"),\"machine\":$(json_string "$(machine_name)"),\"https_token\":$wants_token,\"scopes\":[\"read\",\"write\",\"create\"]}"
   answer=$(curl -sS --max-time 20 -H 'content-type: application/json' --data "$body" "$WEB/api/ssh-keys/request") || die "cannot reach $WEB"
   code=$(json_field "$answer" user_code)
   [ -n "$code" ] || die "Gitstalk refused the key: $(json_field "$answer" message)"
@@ -338,14 +342,24 @@ cmd_remote() {
   return 0
 }
 
-cmd_verify() {
-  load_config
+# The HTTPS token git keeps for the Gitstalk host, into $token (never printed, never in argv).
+stored_token() {
   creds=$(printf 'protocol=%s\nhost=%s\n\n' "$GIT_PROTO" "$GIT_HOST" | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null)
   token=$(printf '%s\n' "$creds" | sed -n 's/^password=//p')
   [ -n "$token" ] || die "git has no credential for $GIT_HOST yet: run register"
+}
+
+# The account the stored token acts for, into $handle.
+whoami_handle() {
   whoami=$(printf 'user = "x:%s"\n' "$token" | curl -sS --max-time 20 -K - "$GIT_ORIGIN/v1/whoami")
   handle=$(json_field "$whoami" handle)
   [ -n "$handle" ] || die "the gateway refused the stored credential: run register again"
+}
+
+cmd_verify() {
+  load_config
+  stored_token
+  whoami_handle
   say "whoami: @$handle"
   if [ $# -ge 1 ]; then
     GIT_TERMINAL_PROMPT=0 git ls-remote "$(repo_url "$1")" >/dev/null || die "git ls-remote $1 failed"
@@ -353,11 +367,64 @@ cmd_verify() {
   fi
 }
 
+cmd_create() {
+  [ $# -ge 1 ] || die "create: pass [OWNER/]NAME"
+  full=$1
+  shift
+  visibility=private start= description=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --public) visibility=public; shift ;;
+      --private) visibility=private; shift ;;
+      --start) [ $# -ge 2 ] || die "create: --start needs a starter id"; start=$2; shift 2 ;;
+      --description) [ $# -ge 2 ] || die "create: --description needs text"; description=$2; shift 2 ;;
+      *) die "create: unknown option $1" ;;
+    esac
+  done
+  load_config
+  stored_token
+  case $full in
+    */*/*) die "create: pass [OWNER/]NAME" ;;
+    */*) ;;
+    *) whoami_handle; full=$handle/$full ;;
+  esac
+  owner=${full%%/*}
+  name=${full#*/}
+  [ -n "$owner" ] && [ -n "$name" ] || die "create: pass [OWNER/]NAME"
+  body="{\"name\":$(json_string "$name"),\"owner\":$(json_string "$owner"),\"visibility\":\"$visibility\""
+  [ -n "$start" ] && body="$body,\"start\":$(json_string "$start")"
+  [ -n "$description" ] && body="$body,\"description\":$(json_string "$description")"
+  body="$body}"
+  # The token reaches curl on stdin as a config line, never on its command line.
+  answer=$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -sS --max-time 30 -K - \
+    -H 'content-type: application/json' --data "$body" -w '\n%{http_code}' "$WEB/api/repos") \
+    || die "cannot reach $WEB (check GITSTALK_WEB and the network)"
+  status=$(printf '%s\n' "$answer" | tail -n 1)
+  answer=$(printf '%s\n' "$answer" | sed '$d')
+  message=$(json_field "$answer" message)
+  case $status in
+    201)
+      created=$(json_field "$answer" full_name)
+      [ -n "$created" ] && full=$created
+      say "created: $full ($(json_field "$answer" visibility))"
+      say "web: $(json_field "$answer" web_url)"
+      next=$(json_field "$answer" next)
+      [ -n "$next" ] && say "next: $next" ;;
+    409) say "exists: $full already exists; connecting it" ;;
+    401) die "the gateway refused the stored credential: run register again" ;;
+    403) die "not allowed to create $full${message:+: $message} (a token from before repository creation lacks the create scope: run register again, or create it at $WEB/new)" ;;
+    422) die "invalid repository name $name${message:+: $message}" ;;
+    *) die "create failed (HTTP $status)${message:+: $message}" ;;
+  esac
+  cmd_remote "$full"
+}
+
 case ${1:-} in
   detect) shift; cmd_detect "$@" ;;
   generate) shift; cmd_generate "$@" ;;
   register) shift; cmd_register "$@" ;;
   remote) shift; cmd_remote "$@" ;;
+  create) shift; cmd_create "$@" ;;
   verify) shift; cmd_verify "$@" ;;
   *)
     cat >&2 <<'USAGE'
@@ -365,6 +432,7 @@ usage: gitstalk-setup.sh detect
        gitstalk-setup.sh generate [--file PATH]
        gitstalk-setup.sh register (--key FILE.pub | --agent-key SHA256:… [--agent SOCKET]) [--no-browser]
        gitstalk-setup.sh remote OWNER/REPO [DIR]
+       gitstalk-setup.sh create [OWNER/]NAME [--public] [--start ID] [--description TEXT]
        gitstalk-setup.sh verify [OWNER/REPO]
 USAGE
     exit 2 ;;

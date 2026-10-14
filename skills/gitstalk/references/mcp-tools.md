@@ -12,7 +12,8 @@ The plugin's `.mcp.json` points the `gitstalk` server at the hosted deployment's
 no auth header, so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or
 `/mcp` in a session) and approve in the browser. Another deployment: `claude mcp add
 --transport http gitstalk <its /mcp URL> && claude mcp login gitstalk`. The client asks for
-`read collaborate write` and the consent page ticks those; **secrets** (set Actions secrets and
+`read collaborate write` and the consent page ticks those (the plugin's setup flow also ticks
+**create**: may create repositories in namespaces where the person may create them); **secrets** (set Actions secrets and
 variables) is never ticked for the person: they opt in. Every tool also follows the person's
 role on the repository: read tools need the read role; `bean_open`, `task_claim`,
 `task_release` and a pushing credential the write role; running workflows the maintain role
@@ -36,6 +37,7 @@ Deploy tokens (`bsd_`) never open MCP. Never print a token.
 
 | Tool | Scope | Call it when |
 |---|---|---|
+| `repo_create({ name, owner?, visibility?, start?, description? })` | create | Listed only with `create`. A new repository: `owner` defaults to you, `visibility` to `private`, `start` to `empty` (or a starter id). Answers `full_name`, `clone_url`, `web_url`, `stalk`, `visibility`, `next`. Ask the person first for a public one or one in an organization: `new-repo.md` |
 | `repo_list()` | read | The repositories you own or collaborate on, your role and access (`write` = may push beans), clone URLs |
 | `repo_status(repo)` | read | Stalk and sprout heads, unvalidated window, beans in flight (who), beans sent back, recent reds, open cards |
 | `bean_open(repo, bean, intent, task?)` | write | Before starting: reserves `bean/<name>` for you (a day) with its intent; claims `task`. The intent you reserve is the bean's intent at the push (`-o intent` overrides) |
@@ -102,6 +104,7 @@ All take `repo` (owner/name) in a signed-in session; run tokens read their own r
 
 ## Errors
 
+- `exists` (repo_create): the name is taken; if it is not the person's, ask for another.
 - `no repository owner/name you can use`: wrong name, or not yours and private.
 - `… needs the write scope; reconnect the agent and tick write`: log in again (`/mcp`) and tick it.
 - `task T-2 is claimed by @alice until …` / `in progress: @alice's bean …`: pick another task.

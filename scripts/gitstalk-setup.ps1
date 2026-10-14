@@ -7,6 +7,7 @@ also runs):
   gitstalk-setup.ps1 generate [-File PATH]
   gitstalk-setup.ps1 register (-Key FILE.pub | -AgentKey SHA256:... [-Agent SOCKET]) [-NoBrowser]
   gitstalk-setup.ps1 remote OWNER/REPO [DIR]
+  gitstalk-setup.ps1 create [OWNER/]NAME [-Public] [-Start ID] [-Description TEXT]
   gitstalk-setup.ps1 verify [OWNER/REPO]
 
 Needs git and OpenSSH (Windows 10/11's built-in OpenSSH or Git for Windows' ssh-keygen).
@@ -21,7 +22,10 @@ param(
   [string]$Key = '',
   [string]$AgentKey = '',
   [string]$Agent = '',
-  [switch]$NoBrowser
+  [switch]$NoBrowser,
+  [switch]$Public,
+  [string]$Start = '',
+  [string]$Description = ''
 )
 $ErrorActionPreference = 'Stop'
 # Each setting is also read under its name from before the rename (BEANSTALK_*) when unset.
@@ -170,7 +174,8 @@ function Invoke-Register {
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
   Set-Content -Path (Join-Path $ConfigDir 'key.pub') -Value $line
   if ($AgentKey) { Set-Content -Path (Join-Path $ConfigDir 'agent') -Value $(if ($Agent) { $Agent } else { $env:SSH_AUTH_SOCK }) }
-  $body = @{ public_key = $line; machine = (Get-MachineName); https_token = (-not $config.SshHost) } | ConvertTo-Json -Compress
+  # The token git keeps may also create repositories (the create scope; consent shows it ticked).
+  $body = @{ public_key = $line; machine = (Get-MachineName); https_token = (-not $config.SshHost); scopes = @('read', 'write', 'create') } | ConvertTo-Json -Compress
   try { $answer = Invoke-RestMethod -Method Post -Uri "$Web/api/ssh-keys/request" -ContentType 'application/json' -Body $body -TimeoutSec 20 }
   catch { Fail "Gitstalk refused the key: $($_.ErrorDetails.Message)" }
   Say "fingerprint: $($answer.fingerprint)"
@@ -247,16 +252,26 @@ function Invoke-Remote {
   if (-not $config.SshHost) { Say 'transport: HTTPS with your token (git over SSH is not live yet; setup switches remotes once it is)' }
 }
 
+# The HTTPS token git keeps for the Gitstalk host (never printed, never on a command line).
+function Get-StoredToken($Config) {
+  $env:GIT_TERMINAL_PROMPT = '0'
+  $creds = "protocol=$($Config.Proto)`nhost=$($Config.Host)`n`n" | & git credential fill 2>$null
+  $token = ($creds | Where-Object { $_ -like 'password=*' } | Select-Object -First 1) -replace '^password=', ''
+  if (-not $token) { Fail "git has no credential for $($Config.Host) yet: run register" }
+  return $token
+}
+
+function Get-Handle($Config, [string]$Token) {
+  $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x:$Token"))
+  try { $whoami = Invoke-RestMethod -Uri "$($Config.Origin)/v1/whoami" -Headers @{ Authorization = "Basic $basic" } -TimeoutSec 20 }
+  catch { Fail 'the gateway refused the stored credential: run register again' }
+  return [string]$whoami.handle
+}
+
 function Invoke-Verify {
   $config = Get-SetupConfig
-  $env:GIT_TERMINAL_PROMPT = '0'
-  $creds = "protocol=$($config.Proto)`nhost=$($config.Host)`n`n" | & git credential fill 2>$null
-  $token = ($creds | Where-Object { $_ -like 'password=*' } | Select-Object -First 1) -replace '^password=', ''
-  if (-not $token) { Fail "git has no credential for $($config.Host) yet: run register" }
-  $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x:$token"))
-  try { $whoami = Invoke-RestMethod -Uri "$($config.Origin)/v1/whoami" -Headers @{ Authorization = "Basic $basic" } -TimeoutSec 20 }
-  catch { Fail 'the gateway refused the stored credential: run register again' }
-  Say "whoami: @$($whoami.handle)"
+  $token = Get-StoredToken $config
+  Say "whoami: @$(Get-Handle $config $token)"
   if ($Repo) {
     & git ls-remote (Get-RepoUrl $config $Repo) *> $null
     if ($LASTEXITCODE -ne 0) { Fail "git ls-remote $Repo failed" }
@@ -264,11 +279,52 @@ function Invoke-Verify {
   }
 }
 
+function Invoke-Create {
+  if ($Repo -notmatch '^[^/]+(/[^/]+)?$') { Fail 'create: pass [OWNER/]NAME' }
+  $config = Get-SetupConfig
+  $token = Get-StoredToken $config
+  if ($Repo -notmatch '/') { $script:Repo = "$(Get-Handle $config $token)/$Repo" }
+  $owner, $name = $script:Repo -split '/', 2
+  $request = [ordered]@{ name = $name; owner = $owner; visibility = $(if ($Public) { 'public' } else { 'private' }) }
+  if ($Start) { $request.start = $Start }
+  if ($Description) { $request.description = $Description }
+  $body = $request | ConvertTo-Json -Compress
+  $status = 0
+  $content = ''
+  try {
+    $response = Invoke-WebRequest -Method Post -Uri "$Web/api/repos" -Headers @{ Authorization = "Bearer $token" } -ContentType 'application/json' -Body $body -UseBasicParsing -TimeoutSec 30
+    $status = [int]$response.StatusCode
+    $content = $response.Content
+  } catch {
+    if (-not $_.Exception.Response) { Fail "cannot reach $Web (check GITSTALK_WEB and the network)" }
+    $status = [int]$_.Exception.Response.StatusCode
+    $content = $_.ErrorDetails.Message
+  }
+  $answer = $null
+  try { $answer = $content | ConvertFrom-Json } catch { }
+  $message = if ($answer -and $answer.message) { ": $($answer.message)" } else { '' }
+  switch ($status) {
+    201 {
+      if ($answer.full_name) { $script:Repo = [string]$answer.full_name }
+      Say "created: $($script:Repo) ($($answer.visibility))"
+      Say "web: $($answer.web_url)"
+      if ($answer.next -is [string] -and $answer.next) { Say "next: $($answer.next)" }
+    }
+    409 { Say "exists: $($script:Repo) already exists; connecting it" }
+    401 { Fail 'the gateway refused the stored credential: run register again' }
+    403 { Fail "not allowed to create $($script:Repo)$message (a token from before repository creation lacks the create scope: run register again, or create it at $Web/new)" }
+    422 { Fail "invalid repository name $name$message" }
+    default { Fail "create failed (HTTP $status)$message" }
+  }
+  Invoke-Remote
+}
+
 switch ($Command) {
   'detect' { Invoke-Detect }
   'generate' { Invoke-Generate }
   'register' { Invoke-Register }
   'remote' { Invoke-Remote }
+  'create' { Invoke-Create }
   'verify' { Invoke-Verify }
-  default { [Console]::Error.WriteLine('usage: gitstalk-setup.ps1 detect | generate | register | remote OWNER/REPO [DIR] | verify [OWNER/REPO]'); exit 2 }
+  default { [Console]::Error.WriteLine('usage: gitstalk-setup.ps1 detect | generate | register | remote OWNER/REPO [DIR] | create [OWNER/]NAME [-Public] | verify [OWNER/REPO]'); exit 2 }
 }

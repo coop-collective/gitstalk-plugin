@@ -64,6 +64,30 @@ try {
   Pop-Location
   Check 'remote clones over HTTPS without a prompt' (Test-Path (Join-Path $Root 'clone/README')) $out
 
+  $token = (("protocol=$(([Uri]$env:GITSTALK_WEB).Scheme)`nhost=$(([Uri]$env:GITSTALK_WEB).Authority)`n`n" | & git credential fill) | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+  $new = "pnew-$(Get-Random)"
+  $newDir = Join-Path $Root 'newrepo'
+  New-Item -ItemType Directory -Path $newDir | Out-Null
+  Push-Location $newDir
+  & git init -q
+  $created = Setup create "smoke/$new" -Description 'a "quoted" test'
+  $origin = & git remote get-url origin
+  $exists = Setup create "smoke/$new"
+  Pop-Location
+  Check 'create (201) prints the new repository, private, and its web page' ([bool]($created -match "^created: smoke/$new \(private\)$") -and [bool]($created -match "^web: .*/smoke/$new$")) $created
+  Check 'create then points origin at the new repository' ($origin -like "*/smoke/$new.git") $origin
+  Check 'create (409) says it exists and still connects the remote' ([bool]($exists -match "^exists: smoke/$new already exists") -and [bool]($exists -match '^remote: origin is')) $exists
+  $state = Invoke-RestMethod -Uri "$($env:GITSTALK_WEB)/__state"
+  $first = $state.creates | Where-Object { $_.name -eq $new } | Select-Object -First 1
+  Check 'create sent the stored token as a Bearer, private by default, with the description' ($first.bearer -and $first.authorized -and $first.visibility -eq 'private' -and $first.description -eq 'a "quoted" test') ($first | ConvertTo-Json -Compress)
+  $forbidden = Setup create someorg/x -Public
+  Check 'create (403) fails and names the create scope' ([bool]($forbidden -match 'not allowed to create someorg/x') -and [bool]($forbidden -match 'create scope')) $forbidden
+  $state = Invoke-RestMethod -Uri "$($env:GITSTALK_WEB)/__state"
+  Check 'create -Public asks for a public repository' ([bool]($state.creates | Where-Object { $_.owner -eq 'someorg' -and $_.visibility -eq 'public' })) ''
+  $invalid = Setup create smoke/.bad
+  Check 'create (422) fails and says the name is invalid' ([bool]($invalid -match 'invalid repository name .bad')) $invalid
+  Check 'create never prints the token' ($token -and -not ((($created + $exists + $forbidden + $invalid) -join "`n").Contains($token))) ''
+
   Remove-Item (Join-Path $Root 'browser.log') -ErrorAction SilentlyContinue
   $out = Setup register -AgentKey $agentFp -NoBrowser
   Check 'register -NoBrowser shows the page and code to enter' ([bool]($out -match 'enter BCDF-GHJK') -and -not (Test-Path (Join-Path $Root 'browser.log'))) $out

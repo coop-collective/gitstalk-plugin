@@ -1,17 +1,22 @@
 // A stand-in for the Gitstalk web app and gateway, for the setup script's tests: the setup
-// API, key requests (approved on the second poll, or denied), whoami, and git smart HTTP over
-// `git http-backend` behind the same token check the gateway makes. No dependencies.
+// API, key requests (approved on the second poll, or denied), whoami, repository creation
+// (POST /api/repos: 201, 409 when it exists, 403 outside the caller's namespace, 422 for a bad
+// name), and git smart HTTP over `git http-backend` behind the same token check the gateway
+// makes. No dependencies.
 //
 //   node fake-gitstalk.mjs <port> <repos dir> [public origin]
-//   GET /__state           what the last key request carried (for assertions)
+//   GET /__state           what the key requests and create calls carried (for assertions)
 //   POST /__mode?deny=1    the next request is declined;  ?ssh=<host>  the SSH endpoint is live
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 
 const [port = '0', reposDir = '.', publicOrigin] = process.argv.slice(2);
 const state = {
   requests: [],
+  creates: [],
   tokens: new Set([process.env.FAKE_DEPLOY_TOKEN ?? 'bsd_fake_deploy']),
   deny: false,
 };
@@ -36,7 +41,10 @@ async function handle(req, res) {
     if (url.pathname === '/api/ssh-keys/request')
       return keyRequest(res, origin, JSON.parse(body.toString()));
     if (url.pathname === '/api/ssh-keys/poll') return poll(res, JSON.parse(body.toString()));
-    if (url.pathname === '/__state') return json(res, 200, { requests: state.requests });
+    if (url.pathname === '/api/repos' && req.method === 'POST')
+      return createRepo(req, res, origin, JSON.parse(body.toString()));
+    if (url.pathname === '/__state')
+      return json(res, 200, { requests: state.requests, creates: state.creates });
     if (url.pathname === '/__mode') {
       state.deny = url.searchParams.get('deny') === '1';
       sshHost = url.searchParams.get('ssh') ?? '';
@@ -97,6 +105,37 @@ function poll(res, input) {
     handle: 'smoke',
     https_token: token,
     https_token_expires_at: Date.now() + 1e9,
+  });
+}
+
+// The caller may create in its own namespace (smoke) only; the bare repository is real, so git
+// can push to it next.
+function createRepo(req, res, origin, input) {
+  const bearer = /^bearer\s/i.test(req.headers.authorization ?? '');
+  const token = tokenOf(req);
+  state.creates.push({ ...input, bearer, authorized: state.tokens.has(token) });
+  if (!bearer || !state.tokens.has(token))
+    return json(res, 401, { error: 'unauthorized', message: 'a personal token is required' });
+  const owner = input.owner ?? 'smoke';
+  const name = String(input.name ?? '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name) || name.endsWith('.git'))
+    return json(res, 422, { error: 'invalid_name', message: 'letters, digits, ".", "_" and "-"' });
+  if (owner !== 'smoke')
+    return json(res, 403, { error: 'forbidden', message: `you cannot create repositories in ${owner}` });
+  const dir = join(reposDir, owner, `${name}.git`);
+  if (existsSync(dir))
+    return json(res, 409, { error: 'exists', message: `${owner}/${name} already exists` });
+  mkdirSync(join(reposDir, owner), { recursive: true });
+  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', dir]);
+  spawnSync('git', ['-C', dir, 'config', 'http.receivepack', 'true']);
+  const visibility = input.visibility ?? 'private';
+  return json(res, 201, {
+    full_name: `${owner}/${name}`,
+    clone_url: `${origin}/${owner}/${name}.git`,
+    web_url: `${origin}/${owner}/${name}`,
+    stalk: 'stalk',
+    visibility,
+    next: `git push origin HEAD:refs/heads/bean/first`,
   });
 }
 
