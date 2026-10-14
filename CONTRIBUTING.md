@@ -19,4 +19,4 @@ instruction set for coding agents and applies here too.
 - Bump `version` in `.claude-plugin/plugin.json` when a change should reach installed plugins.
 - Never commit secrets, tokens or account ids.
 
-Contributions are accepted under the repository's licence, [FSL-1.1-ALv2](LICENSE.md).
+Contributions are accepted under the repository's licence, [MIT](LICENSE).
