@@ -1,5 +1,6 @@
 {
   "name": "gitstalk-plugin",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

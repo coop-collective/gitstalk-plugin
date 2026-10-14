@@ -140,5 +140,5 @@ docs live in [coop-collective/gitstalk](https://github.com/coop-collective/gitst
 
 ## License
 
-[FSL-1.1-ALv2](LICENSE.md), the same as Gitstalk: source-available, no competing hosted use, and
-each version becomes Apache-2.0 two years after its release.
+[MIT](LICENSE). Copyright 2026 Coop. "Gitstalk" and its logo are trademarks and are not licensed by
+the MIT License; see [TRADEMARKS.md](https://github.com/coop-collective/gitstalk/blob/main/TRADEMARKS.md) in the Gitstalk repository.
