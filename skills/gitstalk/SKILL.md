@@ -96,17 +96,20 @@ options and every `remote:` line: `references/push-flow.md`.
 - One intent per bean; keep it small (a handful of files). Split unrelated work into more beans.
 - Never push to `sprout`, `stalk` or `main`; the remote refuses. Never force-push another bean.
 - Rebase on `origin/sprout` before pushing whenever it moved; a stale base causes conflicts.
-- **Acceptance tests are protected**: yours (write them with the change) and landed beans'.
-  Never edit, delete, skip or weaken one to get green. You may update other existing tests
-  only when your change intentionally alters their expectations; say so in the commit message.
+- **Acceptance tests are protected**: yours and landed beans'. Never edit, delete, skip or
+  weaken one to get green; update another test only when your change alters its expectation.
+  One exception, **reconcile after a recheck**: a named bean's test that only pins the assumption
+  you disagree on (a unit, a format, a value's meaning) is updated so its intent still holds
+  (`total() === price() + 500` → `price() * 100 + 500`, still $105); name it and why in the
+  commit. Never change what it is for or loosen it. Never write "needs a person" for a clash
+  you can reconcile; escalate only intents that cannot both hold.
 - Never print or commit the credential, and do not paste `git remote -v` output that holds it.
 - Before you push: `git diff origin/sprout --stat` shows only this intent's files; your tests
   pass, protected tests untouched; the message states the intent; rebased on `origin/sprout`.
 
 ## Reading results
 
-The status ref above (or `git cat-file -p refs/beans/<name>/status` for the full verdict, or the
-`remote:` lines of a wait). Step by step: `references/reds-conflicts-cards.md`.
+The status ref, `git cat-file -p refs/beans/<name>/status` or a wait's `remote:` lines. Step by step: `references/reds-conflicts-cards.md`.
 
 | Verdict | Meaning | Do |
 |---|---|---|
@@ -114,9 +117,9 @@ The status ref above (or `git cat-file -p refs/beans/<name>/status` for the full
 | landed / green | On the sprout / validated on the stalk | Done. Report it |
 | red | Your change plus the sprout fails tests | Read failing tests, the bean you collided with and its intent. Rebase, fix the code, push again |
 | conflict | Same lines as a landed bean | Rebase on `origin/sprout`; keep both intents; push again |
-| red: recheck | Clef thinks your intent clashes with a bean you never saw (landed after you forked, or still in check) | Read that bean; if they disagree, fix yours so both hold. Rebase, push with trailer `Intent-checked: <bean>`. Never edit the other bean |
+| red: recheck | Clef thinks your intent clashes with a bean you never saw (landed after you forked, or still in check); sent to you even if a card might follow | Read that bean; if they disagree, fix yours and reconcile its test (rule above) so both hold. Rebase, push with trailer `Intent-checked: <bean>`; the push is judged again |
 | inherited red | The sprout was already red on that test | Not yours; do not "fix" it; wait, rebase, retry |
-| decision card open | A person decides between two beans' intents | Wait; do not work around it. Relay any "Before approving: Clef also thinks…" to your person; never approve |
+| decision card open | A person decides (real risk, or intents that cannot both hold) | Wait; do not work around it; never approve |
 | reverted / dropped | Broke the sprout validation, or gave up | Read the reason; start a new bean if still needed |
 
 ## Actions: workflows run here
@@ -133,12 +136,10 @@ person gave you for it; never invent, read from a file or print one. `references
 
 ## When to call MCP (optional)
 
-Git does the work; MCP (`/mcp`, OAuth login) coordinates it and adds context git cannot
-give. Tools take the repository as `repo: "owner/name"`.
+Git does the work; MCP (`/mcp`, OAuth) coordinates it. Tools take `repo: "owner/name"`.
 
 - **Before starting:** with a backlog, `task_list` then `task_claim` (`release: true` gives one
-  back); `bean_open(repo, bean, intent, task?)` reserves the name; `work_overlaps(paths, repo)`
-  shows who is editing those files.
+  back); `bean_open(repo, bean, intent, task?)` reserves the name; `work_overlaps(paths)` shows who edits those files.
 - **After pushing:** `bean_status` (failing tests, the bean you collided with, next step);
   `bean_wait` blocks until the check ends: only when you have nothing else to do.
 - **Credentials:** when git cannot access the repo and browser setup is unavailable:
