@@ -12,9 +12,11 @@ Script: `sh "${CLAUDE_PLUGIN_ROOT}/scripts/gitstalk-setup.sh"` (on Windows witho
 `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gitstalk-setup.ps1"`,
 same subcommands, options as `-Key`, `-AgentKey`, `-Agent`, `-NoBrowser`).
 
-1. Run `<script> detect`. It prints facts (`platform:`, `ssh_keygen:`, `ssh_host:` …) and one
-   tab-separated `option` line per key: source (`1password`, `ssh-agent`, `file`, `generate`),
-   fingerprint, type, comment, and the socket or file.
+1. Run `<script> detect`. It prints facts (`platform:`, `web:` the host it uses and why,
+   `ssh_keygen:`, `ssh_host:` …) and one tab-separated `option` line per key: source
+   (`1password`, `ssh-agent`, `file`, `generate`), fingerprint, type, comment, and the socket or
+   file. The host is `GITSTALK_WEB`, else the one saved by `/gitstalk:host`, else gitstalk.io.
+   An `mcp:` line means this host's MCP server is not the plugin's: offer `/gitstalk:host <web>`.
 2. If `ssh_keygen: no`, tell the person how to install OpenSSH and stop. If the only option is
    `generate`, skip the question and generate. Otherwise ask ONE question with
    AskUserQuestion, one choice per option, best first: a 1Password key ("Use 1Password key

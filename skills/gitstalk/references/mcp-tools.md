@@ -8,14 +8,17 @@ coordinate agents (claims, reserved names) and explain verdicts; none of them mo
 
 ## Setup
 
-The plugin's `.mcp.json` points the `gitstalk` server at the hosted deployment's `/mcp` with
-no auth header, so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or
-`/mcp` in a session) and approve in the browser. Another deployment: `claude mcp add
---transport http gitstalk <its /mcp URL> && claude mcp login gitstalk`. The client asks for
-`read collaborate write` and the consent page ticks those; **secrets** (set Actions secrets and
+The plugin's `gitstalk` server points at the hosted deployment's `/mcp` with no auth header,
+so the client uses OAuth: `claude mcp login plugin:gitstalk:gitstalk` (or `/mcp` in a session)
+and approve in the browser. Another deployment (self-hosted, local, staging): `/gitstalk:host
+<url>` saves it for the setup script and the plugin's server (restart, then `/mcp`); other
+clients add `<url>`'s `/mcp` by hand. Two Gitstalk servers connected offer the same tool names:
+disable one in `/mcp`. The client asks for
+`read collaborate write` and the consent page ticks those (the plugin's setup flow also ticks
+**create**: may create repositories in namespaces where the person may create them); **secrets** (set Actions secrets and
 variables) is never ticked for the person: they opt in. Every tool also follows the person's
 role on the repository: read tools need the read role; `bean_open`, `task_claim`,
-`task_release` and a pushing credential the write role; running workflows the maintain role
+releasing a task and a pushing credential the write role; running workflows the maintain role
 plus `write`; changing secrets the maintain role plus `secrets` (`repository_access(repository)`
 says which you have). Without OAuth the
 server accepts a personal token as a bearer (`--header "Authorization: Bearer $TOKEN"`).
@@ -24,7 +27,7 @@ Deploy tokens (`bsd_`) never open MCP. Never print a token.
 ## The work cycle with MCP
 
 1. `task_list(repo)`; `task_claim(repo, task)`. Refused: someone holds it; pick another.
-   Not doing it after all: `task_release(repo, task)`.
+   Not doing it after all: `task_claim(repo, task, release: true)`.
 2. `bean_open(repo, bean, intent, task?)`: the branch, `start` and `push` commands.
 3. Work with git: `git fetch origin sprout && git switch -c bean/<name> origin/sprout`, commit.
 4. `git push origin HEAD:refs/heads/bean/<name>` and start the next task; do not wait.
@@ -36,6 +39,7 @@ Deploy tokens (`bsd_`) never open MCP. Never print a token.
 
 | Tool | Scope | Call it when |
 |---|---|---|
+| `repo_create({ name, owner?, visibility?, start?, description? })` | create | Listed only with `create`. A new repository: `owner` defaults to you, `visibility` to `private`, `start` to `empty` (or a starter id). Answers `full_name`, `clone_url`, `web_url`, `stalk`, `visibility`, `next`. Ask the person first for a public one or one in an organization: `new-repo.md` |
 | `repo_list()` | read | The repositories you own or collaborate on, your role and access (`write` = may push beans), clone URLs |
 | `repo_status(repo)` | read | Stalk and sprout heads, unvalidated window, beans in flight (who), beans sent back, recent reds, open cards |
 | `bean_open(repo, bean, intent, task?)` | write | Before starting: reserves `bean/<name>` for you (a day) with its intent; claims `task`. The intent you reserve is the bean's intent at the push (`-o intent` overrides) |
@@ -43,7 +47,7 @@ Deploy tokens (`bsd_`) never open MCP. Never print a token.
 | `bean_wait(repo, bean, until?, timeout_s?)` | read | The MCP twin of `git push -o bean=<bean> origin HEAD:refs/wait/any`: blocks until the check ends (`until: "stalk"`: until validated), default 300 s; the verdict wakes it (no polling). Only when nothing else is left |
 | `task_list(repo)` | read | The backlog (`.gitstalk/backlog.md` or `BACKLOG.md` on the sprout): open, claimed (by, until), in_progress (whose bean), done |
 | `task_claim(repo, task)` | write | Before working on a task: two hours, renewed by claiming again or `bean_open` with it; a pushed bean for the task holds it until it lands |
-| `task_release(repo, task)` | write | You will not do it after all (already done, stopping): drops your claim and the names you reserved for it |
+| `task_claim(repo, task, release: true)` | write | You will not do it after all (already done, stopping): drops your claim and the names you reserved for it |
 | `git_credentials(repo, ttl_minutes?)` | read (push needs write) | Only when git is not connected: a credential for that one repository, at most an hour, as `git credential approve` input |
 
 Backlog format: `- [ ] <id>: <title>` items (ticked = done), detail indented below. Change
@@ -102,6 +106,7 @@ All take `repo` (owner/name) in a signed-in session; run tokens read their own r
 
 ## Errors
 
+- `exists` (repo_create): the name is taken; if it is not the person's, ask for another.
 - `no repository owner/name you can use`: wrong name, or not yours and private.
 - `… needs the write scope; reconnect the agent and tick write`: log in again (`/mcp`) and tick it.
 - `task T-2 is claimed by @alice until …` / `in progress: @alice's bean …`: pick another task.

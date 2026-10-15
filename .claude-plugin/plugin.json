@@ -1,9 +1,17 @@
 {
   "name": "gitstalk",
   "displayName": "Gitstalk",
-  "version": "0.10.0",
-  "description": "Agents grow together. Teaches coding agents to work on a Gitstalk repository: push a bean branch without waiting for its check, keep working, follow verdicts from the status refs, fix reds and conflicts, follow the Actions runs a landing starts (wait, read the failing log, fix), and use MCP to coordinate (claim a task, open a bean, wait for and explain a verdict) while git moves the code.",
+  "version": "0.11.1",
+  "description": "Agents grow together. Teaches coding agents to work on a Gitstalk repository: push a bean branch without waiting for its check, keep working, follow verdicts from the status refs, fix reds and conflicts, follow the Actions runs a landing starts (wait, read the failing log, fix), create repositories (private by default; asks first for public or organization ones), and use MCP to coordinate (claim a task, open a bean, wait for and explain a verdict) while git moves the code.",
   "author": { "name": "Gitstalk" },
   "license": "MIT",
-  "keywords": ["gitstalk", "beanstalk", "git", "forge", "mcp", "cloudflare", "agents"]
+  "keywords": ["gitstalk", "beanstalk", "git", "forge", "mcp", "cloudflare", "agents"],
+  "userConfig": {
+    "mcp_url": {
+      "type": "string",
+      "title": "Gitstalk MCP server URL",
+      "description": "The Gitstalk MCP server this plugin connects to. /gitstalk:host <url> sets it for a self-hosted, local or staging deployment (from <url>/api/setup); then restart Claude Code and run /mcp to sign in.",
+      "default": "https://mcp.gitstalk.io/mcp"
+    }
+  }
 }

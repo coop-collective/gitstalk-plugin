@@ -64,6 +64,59 @@ try {
   Pop-Location
   Check 'remote clones over HTTPS without a prompt' (Test-Path (Join-Path $Root 'clone/README')) $out
 
+  # Custom host: the saved host, GITSTALK_WEB over it, the MCP line.
+  $web = $env:GITSTALK_WEB
+  $hostFile = Join-Path $env:XDG_CONFIG_HOME 'gitstalk/host'
+  $out = Setup detect
+  Check 'detect says which web app it uses and why (GITSTALK_WEB)' ([bool]($out -contains "web: $web (GITSTALK_WEB)")) $out
+  Check 'detect prints one mcp line naming /gitstalk:host for a non-production MCP server' (@($out -match '^mcp: ').Count -eq 1 -and [bool]($out -contains "mcp: this host's MCP server is $web/mcp; in Claude Code run /gitstalk:host $web (then restart Claude Code and run /mcp to sign in)")) $out
+  $out = Setup verify
+  Check 'verify prints the same mcp line' ([bool]($out -match "^mcp: this host's MCP server is $([regex]::Escape("$web/mcp"))")) $out
+  Invoke-RestMethod -Method Post -Uri "$web/__mode?mcp=https://mcp.gitstalk.io/mcp" | Out-Null
+  $out = @(Setup detect) + @(Setup verify)
+  Check 'detect and verify stay silent about MCP when it is the production server' (-not ($out -match '^mcp')) $out
+  Invoke-RestMethod -Method Post -Uri "$web/__mode" | Out-Null
+  $env:GITSTALK_WEB = ''
+  $out = Setup host "$web/"
+  Check 'host URL checks the host, saves it and prints the Claude Code configure line' (((Get-Content $hostFile -TotalCount 1) -eq $web) -and [bool]($out -contains "host: saved $web in $hostFile") -and [bool]($out -contains ("claude_code: printf '%s' '{""mcp_url"":""$web/mcp""}' | claude plugin configure gitstalk@gitstalk --values-stdin"))) $out
+  $out = Setup detect
+  Check 'without GITSTALK_WEB, detect follows the saved host and no longer repeats the mcp line' ([bool]($out -contains "web: $web (saved in $hostFile)") -and -not ($out -match '^mcp:')) $out
+  $out = Setup verify smoke/demo
+  Check 'verify follows the saved host' ([bool]($out -match '^ls_remote: smoke/demo ok')) $out
+  $env:GITSTALK_WEB = 'http://127.0.0.1:9'
+  $out = Setup detect
+  Check 'GITSTALK_WEB wins over the saved host' ([bool]($out -match 'cannot reach http://127.0.0.1:9')) $out
+  $env:GITSTALK_WEB = ''
+  $out = Setup host http://127.0.0.1:9
+  Check 'host refuses a host that does not answer and keeps the saved one' (((Get-Content $hostFile -TotalCount 1) -eq $web) -and [bool]($out -match 'cannot reach')) $out
+  $out = Setup host -Reset
+  Check 'host -Reset forgets the saved host' (-not (Test-Path $hostFile) -and [bool]($out -match '^host: forgotten')) $out
+  $env:GITSTALK_WEB = $web
+
+  $token = (("protocol=$(([Uri]$env:GITSTALK_WEB).Scheme)`nhost=$(([Uri]$env:GITSTALK_WEB).Authority)`n`n" | & git credential fill) | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+  $new = "pnew-$(Get-Random)"
+  $newDir = Join-Path $Root 'newrepo'
+  New-Item -ItemType Directory -Path $newDir | Out-Null
+  Push-Location $newDir
+  & git init -q
+  $created = Setup create "smoke/$new" -Description 'a "quoted" test'
+  $origin = & git remote get-url origin
+  $exists = Setup create "smoke/$new"
+  Pop-Location
+  Check 'create (201) prints the new repository, private, and its web page' ([bool]($created -match "^created: smoke/$new \(private\)$") -and [bool]($created -match "^web: .*/smoke/$new$")) $created
+  Check 'create then points origin at the new repository' ($origin -like "*/smoke/$new.git") $origin
+  Check 'create (409) says it exists and still connects the remote' ([bool]($exists -match "^exists: smoke/$new already exists") -and [bool]($exists -match '^remote: origin is')) $exists
+  $state = Invoke-RestMethod -Uri "$($env:GITSTALK_WEB)/__state"
+  $first = $state.creates | Where-Object { $_.name -eq $new } | Select-Object -First 1
+  Check 'create sent the stored token as a Bearer, private by default, with the description' ($first.bearer -and $first.authorized -and $first.visibility -eq 'private' -and $first.description -eq 'a "quoted" test') ($first | ConvertTo-Json -Compress)
+  $forbidden = Setup create someorg/x -Public
+  Check 'create (403) fails and names the create scope' ([bool]($forbidden -match 'not allowed to create someorg/x') -and [bool]($forbidden -match 'create scope')) $forbidden
+  $state = Invoke-RestMethod -Uri "$($env:GITSTALK_WEB)/__state"
+  Check 'create -Public asks for a public repository' ([bool]($state.creates | Where-Object { $_.owner -eq 'someorg' -and $_.visibility -eq 'public' })) ''
+  $invalid = Setup create smoke/.bad
+  Check 'create (422) fails and says the name is invalid' ([bool]($invalid -match 'invalid repository name .bad')) $invalid
+  Check 'create never prints the token' ($token -and -not ((($created + $exists + $forbidden + $invalid) -join "`n").Contains($token))) ''
+
   Remove-Item (Join-Path $Root 'browser.log') -ErrorAction SilentlyContinue
   $out = Setup register -AgentKey $agentFp -NoBrowser
   Check 'register -NoBrowser shows the page and code to enter' ([bool]($out -match 'enter BCDF-GHJK') -and -not (Test-Path (Join-Path $Root 'browser.log'))) $out

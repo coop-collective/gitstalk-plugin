@@ -138,6 +138,99 @@ out=$(cd "$ROOT/clone" && git switch -q -c "bean/x$$" && echo more >>README && g
 status=$?
 check 'git push uses the stored credential silently' '[ $status -eq 0 ]' "$out"
 
+# --- custom host: the saved host, GITSTALK_WEB over it, the MCP line ------------------------
+HOST_FILE="$XDG_CONFIG_HOME/gitstalk/host"
+out=$(sh "$SETUP" detect 2>&1)
+check 'detect says which web app it uses and why (GITSTALK_WEB)' \
+  'printf "%s\n" "$out" | grep -qx "web: $ORIGIN (GITSTALK_WEB)"' "$out"
+check 'detect prints one mcp line naming /gitstalk:host for a non-production MCP server' \
+  '[ "$(printf "%s\n" "$out" | grep -c "^mcp: ")" -eq 1 ] && printf "%s\n" "$out" | grep -qF "mcp: this host'"'"'s MCP server is $ORIGIN/mcp; in Claude Code run /gitstalk:host $ORIGIN (then restart Claude Code and run /mcp to sign in)"' "$out"
+out=$(sh "$SETUP" verify 2>&1)
+check 'verify prints the same mcp line' 'printf "%s\n" "$out" | grep -q "^mcp: this host.s MCP server is $ORIGIN/mcp"' "$out"
+curl -fsS -X POST "$GITSTALK_WEB/__mode?mcp=https://mcp.gitstalk.io/mcp" >/dev/null
+out=$(sh "$SETUP" detect 2>&1; sh "$SETUP" verify 2>&1)
+check 'detect and verify stay silent about MCP when it is the production server' \
+  '! printf "%s\n" "$out" | grep -q "^mcp"' "$out"
+curl -fsS -X POST "$GITSTALK_WEB/__mode" >/dev/null
+out=$(env -u GITSTALK_WEB sh "$SETUP" host "$ORIGIN/" 2>&1)
+status=$?
+check 'host URL checks the host, saves it and prints the Claude Code configure line' \
+  '[ $status -eq 0 ] && [ "$(cat "$HOST_FILE")" = "$ORIGIN" ] && printf "%s\n" "$out" | grep -qx "host: saved $ORIGIN in $HOST_FILE" && printf "%s\n" "$out" | grep -qxF "claude_code: printf '"'"'%s'"'"' '"'"'{\"mcp_url\":\"$ORIGIN/mcp\"}'"'"' | claude plugin configure gitstalk@gitstalk --values-stdin"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" detect 2>&1)
+check 'without GITSTALK_WEB, detect follows the saved host and no longer repeats the mcp line' \
+  'printf "%s\n" "$out" | grep -qx "web: $ORIGIN (saved in $HOST_FILE)" && printf "%s\n" "$out" | grep -q "^git_origin: $ORIGIN" && ! printf "%s\n" "$out" | grep -q "^mcp:"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" verify smoke/demo 2>&1)
+check 'verify follows the saved host' 'printf "%s\n" "$out" | grep -q "^ls_remote: smoke/demo ok"' "$out"
+out=$(cd "$ROOT/clone" && git remote set-url origin https://example.invalid/x.git && env -u GITSTALK_WEB sh "$SETUP" remote smoke/demo 2>&1)
+check 'remote follows the saved host' '[ "$(git -C "$ROOT/clone" remote get-url origin)" = "$ORIGIN/smoke/demo.git" ]' "$out"
+out=$(GITSTALK_WEB=http://127.0.0.1:9 sh "$SETUP" detect 2>&1)
+check 'GITSTALK_WEB wins over the saved host' 'printf "%s\n" "$out" | grep -q "cannot reach http://127.0.0.1:9"' "$out"
+out=$(env -u GITSTALK_WEB sh "$SETUP" host http://127.0.0.1:9 2>&1)
+check 'host refuses a host that does not answer and keeps the saved one' \
+  '[ "$(cat "$HOST_FILE")" = "$ORIGIN" ] && printf "%s\n" "$out" | grep -q "cannot reach http://127.0.0.1:9"' "$out"
+check 'host refuses something that is not a URL' '! sh "$SETUP" host gitstalk.dev >/dev/null 2>&1'
+out=$(sh "$SETUP" host --reset 2>&1)
+check 'host --reset forgets the saved host (back to https://gitstalk.io)' \
+  '[ ! -e "$HOST_FILE" ] && printf "%s\n" "$out" | grep -q "^host: forgotten; https://gitstalk.io"' "$out"
+
+# --- create: POST /api/repos with the stored token, then the remote --------------------------
+# curl and git are wrapped to log their arguments, so the token can be shown never to be in argv.
+mkdir -p "$ROOT/bin"
+for tool in curl git; do
+  real=$(command -v "$tool")
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s $*" >>"%s/argv.log"\nexec "%s" "$@"\n' "$tool" "$ROOT" "$real" >"$ROOT/bin/$tool"
+  chmod +x "$ROOT/bin/$tool"
+done
+: >"$ROOT/argv.log"
+# Runs the setup script with the wrappers first on PATH, from DIR; keeps every output line.
+create_in() {
+  dir=$1
+  shift
+  out=$(cd "$dir" && PATH="$ROOT/bin:$PATH" sh "$SETUP" create "$@" 2>&1)
+  status=$?
+  printf '%s\n' "$out" >>"$ROOT/create.out"
+}
+TOKEN=$(printf 'protocol=%s\nhost=%s\n\n' "${ORIGIN%%://*}" "$HOST" | git credential fill | sed -n 's/^password=//p')
+NEW="new-$(date +%s)-$$"
+mkdir -p "$ROOT/newrepo" && git -C "$ROOT/newrepo" init -q
+(cd "$ROOT/newrepo" && echo first >README && git add README && git commit -qm 'Start the project')
+create_in "$ROOT/newrepo" "smoke/$NEW" --description 'a "quoted" test'
+check 'create (201) prints the new repository, private, and its web page' \
+  '[ $status -eq 0 ] && printf "%s\n" "$out" | grep -q "^created: smoke/$NEW (private)$" && printf "%s\n" "$out" | grep -q "^web: $ORIGIN/smoke/$NEW$"' "$out"
+check 'create then points origin at the new repository' \
+  '[ "$(git -C "$ROOT/newrepo" remote get-url origin)" = "$ORIGIN/smoke/$NEW.git" ]' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'create sent the stored token as a Bearer, private by default, with the description' \
+  'printf "%s" "$state" | grep -q "\"name\":\"$NEW\",\"owner\":\"smoke\",\"visibility\":\"private\",\"description\":\"a \\\\\"quoted\\\\\" test\",\"bearer\":true,\"authorized\":true"' "$state"
+out2=$(cd "$ROOT/newrepo" && git push -q origin HEAD:refs/heads/bean/first 2>&1)
+status=$?
+check 'the first commit pushes to the new repository as a bean' '[ $status -eq 0 ]' "$out2"
+create_in "$ROOT/newrepo" "smoke/$NEW"
+check 'create (409) says it exists and still connects the remote' \
+  '[ $status -eq 0 ] && printf "%s\n" "$out" | grep -q "^exists: smoke/$NEW already exists" && printf "%s\n" "$out" | grep -q "^remote: origin is $ORIGIN/smoke/$NEW.git"' "$out"
+create_in "$ROOT" "someorg/x$$" --public
+check 'create (403) fails, names the namespace and the create scope' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "not allowed to create someorg/x$$" && printf "%s\n" "$out" | grep -q "create scope"' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'create --public asks for a public repository' \
+  'printf "%s" "$state" | grep -q "\"name\":\"x$$\",\"owner\":\"someorg\",\"visibility\":\"public\""' "$state"
+create_in "$ROOT" smoke/.bad
+check 'create (422) fails and says the name is invalid' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "invalid repository name .bad"' "$out"
+mkdir -p "$ROOT/bare" && git -C "$ROOT/bare" init -q
+create_in "$ROOT/bare" "b$$" --start empty
+check 'create NAME without an owner creates it under the person, with the starter' \
+  'printf "%s\n" "$out" | grep -q "^created: smoke/b$$ (private)" && curl -fsS "$GITSTALK_WEB/__state" | grep -q "\"name\":\"b$$\",\"owner\":\"smoke\",\"visibility\":\"private\",\"start\":\"empty\""' "$out"
+check 'the token is in no command line and no output of create' \
+  '[ -n "$TOKEN" ] && grep -q "^curl .*/api/repos" "$ROOT/argv.log" && ! grep -qF "$TOKEN" "$ROOT/argv.log" "$ROOT/create.out" && ! grep -q "bsu_" "$ROOT/argv.log" "$ROOT/create.out"' "$(cat "$ROOT/argv.log")"
+out=$(cd "$ROOT" && GITSTALK_CREDENTIAL_HELPER= HOME="$ROOT/nobody" GIT_CONFIG_GLOBAL=/dev/null sh "$SETUP" create smoke/none 2>&1)
+status=$?
+check 'create without a stored credential says to run register' \
+  '[ $status -ne 0 ] && printf "%s\n" "$out" | grep -q "run register"' "$out"
+state=$(curl -fsS "$GITSTALK_WEB/__state")
+check 'register asks for the create scope with read and write' \
+  'printf "%s" "$state" | grep -q "\"scopes\":\[\"read\",\"write\",\"create\"\]"' "$state"
+
 # --- register from the agent without a browser, deny, headless -----------------------------
 : >"$ROOT/browser.log"
 out=$(sh "$SETUP" register --agent-key "$(fingerprint "$ROOT/agent_key.pub")" --no-browser 2>&1)
@@ -159,7 +252,7 @@ curl -fsS -X POST "$GITSTALK_WEB/__mode?ssh=ssh.gitstalk.test" >/dev/null
 out=$(sh "$SETUP" register --agent-key "$(fingerprint "$ROOT/op_key.pub")" --agent "$OP_SOCK" --no-browser 2>&1)
 state=$(curl -fsS "$GITSTALK_WEB/__state")
 check 'with SSH live, register asks for no HTTPS token' \
-  'printf "%s\n" "$out" | grep -q "^approved" && printf "%s" "$state" | tr "}" "\n" | tail -n 2 | grep -q "\"https_token\":false"' "$out"
+  'printf "%s\n" "$out" | grep -q "^approved" && printf "%s" "$state" | sed "s/,\"creates\":.*//" | tr "}" "\n" | tail -n 2 | grep -q "\"https_token\":false"' "$out"
 mkdir -p "$ROOT/sshrepo" && git -C "$ROOT/sshrepo" init -q
 out=$(cd "$ROOT/sshrepo" && sh "$SETUP" remote smoke/demo 2>&1)
 check 'with SSH live, remote uses ssh:// and points ssh at the chosen agent key for that host only' \
