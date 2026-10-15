@@ -1,7 +1,7 @@
 # Handling reds, conflicts and decision cards
 
-Contents: how landing works; when a verdict reaches you; red; inherited red; conflict;
-reverted or dropped; decision cards; hygiene.
+Contents: how landing works; when a verdict reaches you; red; recheck (a clash with a bean you
+never saw); inherited red; conflict; reverted or dropped; decision cards; hygiene.
 
 ## How landing works
 
@@ -31,6 +31,42 @@ push it, then switch back to what you were doing. A child you stacked on it move
    (build error or timeout): run build and tests locally.
 5. After three failed rounds on the same failure, stop, say what you tried, and ask a person.
 
+## Recheck: a clash with a bean you never saw
+
+When the repository's `.gitstalk/policy.yml` routes code to `triage`, Clef also compares your
+bean's intent with beans you could not have read: beans that landed on the sprout after you
+forked, and beans pushed earlier that are still being checked. If Clef is at least 50% sure the
+two clash (a unit, format, meaning or value both rely on), your push comes back as an ordinary
+**red**, not a person's hold:
+
+```
+remote: gitstalk: approval rules: checkout -> recheck (clef, p=0.66)
+remote: gitstalk: back to its author: recheck against price-dollars
+remote: gitstalk: RED: shipping was not landed. Merged onto the sprout, these tests failed:
+remote: gitstalk:   - .gitstalk/policy.yml > recheck against beans that landed after it forked
+remote: gitstalk:     price-dollars: Price in dollars, not cents
+remote: gitstalk:       imports: src/checkout.mjs -> src/price.mjs
+remote: gitstalk:       it changed, you use: price
+remote: gitstalk:     Intent-checked: price-dollars
+```
+
+Each named bean shows its intent and the link Clef found (an import, a name it changed that you
+use). One still in check is labelled `(pushed before this one, still being checked)`.
+
+1. Read the named bean: `git fetch origin sprout && git log origin/sprout` (find its commit,
+   `git show` it) if it landed; `git fetch origin bean/<name>` then `git show FETCH_HEAD` if it
+   is in flight.
+2. Compare the two intents. If they disagree (it now returns dollars, you assumed cents), fix
+   **your** bean so both hold, and add a test for the combination when you can.
+3. Either way, rebase on `origin/sprout` and push again with the trailer
+   `Intent-checked: <bean>[, <bean>]` in the bean's commit message (`git commit --amend`, or the
+   new commit's message). It removes those beans from the comparison; the tests then decide.
+4. Never edit, revert or force-push the other bean. If its intent looks wrong, say so to your
+   person or on the bean's thread (`bean_thread_post`) instead.
+
+Add the trailer only after you have read the bean: it tells Clef you checked, and from then
+on only the tests guard that combination.
+
 ## Inherited red
 
 The sprout was already red on that test before your change (`inherited: true`). It is not
@@ -57,8 +93,14 @@ asks a person to pick. Your bean waits. Do not push variants to route around it 
 edit the other bean's tests. Tell the user (`run_status` lists open cards). If your side
 loses, you redo your intent on the new sprout.
 
+When Clef routes a bean to a person and also sees a clash, the held message adds
+`Before approving: Clef also thinks it may disagree with <bean>`. Relay that line to your
+person with the card; do not approve the bean yourself.
+
 ## Hygiene
 
-Smaller diffs collide and re-check less. One intent per bean. Rebase before every push. Do
+Smaller diffs collide and re-check less. One intent per bean. Write the commit message so the
+assumptions are explicit (units, formats, what a value means: "prices in cents", "dates as
+UTC ISO strings"): it is what Clef compares against other beans. Rebase before every push. Do
 not push while a check for the same bean is still running (refused). Do not block on your own
 check: work on the next task and read the verdict when it is there.

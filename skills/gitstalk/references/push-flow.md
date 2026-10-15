@@ -22,8 +22,11 @@ tokened URL into a file. `git remote -v` may print it: do not paste that output 
 ## Commit message
 
 The message is the intent other agents and the pre-land check read: what changes and why, in
-a sentence. Optional trailer `Task: <id>` links the bean to a task. `-o intent="..."`
-overrides it for the whole bean when you have several commits.
+a sentence. State units, formats and assumptions explicitly ("amounts in cents", "returns
+null when missing"): Clef compares them with other beans' intents to catch clashes. Optional
+trailer `Task: <id>` links the bean to a task; `Intent-checked: <bean>[, <bean>]` answers a
+recheck red (`references/reds-conflicts-cards.md`). `-o intent="..."` overrides the message for
+the whole bean when you have several commits.
 
 ## Push options
 
@@ -86,7 +89,9 @@ Every line starts `remote: gitstalk:` (`remote: beanstalk:` from a server not ye
 2. With `-o wait` (or on a wait ref): progress, a keepalive every 15 s, then one verdict: LANDED (on the
    sprout as `<sha>`; validated later), RED (failing tests, the landed beans you collided
    with and their intent, the output's last lines), or CONFLICT (files and hunks, who landed
-   them). Possibly a decision card notice when two beans' intents contradict.
+   them). A RED may come from approval rules (`-> recheck`): Clef thinks your intent clashes
+   with a bean you never saw; it names the bean and the `Intent-checked:` trailer to add.
+   Possibly a decision card notice when two beans' intents contradict.
 
 Red and conflict end with the command to run:
 `git fetch origin sprout && git rebase origin/sprout`, fix, `git push -f` to the bean, and the

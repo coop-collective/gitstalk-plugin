@@ -67,7 +67,7 @@ See the [authentication guide](skills/gitstalk/references/authentication.md).
 
 | Piece | What it does |
 |---|---|
-| Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, stacking, leading subagents, decision cards, Actions (workflows run when a bean reaches the stalk; wait, read the failing log, fix; secrets), the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
+| Skill `gitstalk` | Loaded when `origin` is a Gitstalk host: the push flow, reading verdicts from `refs/beans/<name>/status`, waiting in git, reds and conflicts, intent rechecks, stacking, leading subagents, decision cards, Actions (workflows run when a bean reaches the stalk; wait, read the failing log, fix; secrets), the MCP tools. Skipped when origin is GitHub, GitLab or another forge. |
 | `/gitstalk:setup [owner/repo]` | Connects git on this machine to your account: lists the SSH keys you have (1Password's SSH agent, ssh-agent, `~/.ssh`) or makes one, asks which to use, and opens Gitstalk once to approve it (a code to enter on another device when there is no browser). Only a public key is sent. |
 | `/gitstalk:new [owner/]name [--public]` | Creates a Gitstalk repository (private unless you ask; it asks you first for a public one or one in an organization), connects this directory as `origin` and pushes its work as the first bean. Uses the token git already keeps, through the setup script's `create` subcommand. |
 | `/gitstalk:host <url>` | Uses a custom host (self-hosted, local or staging) for git setup and the MCP server, saved across sessions; `--reset` goes back to gitstalk.io. |
