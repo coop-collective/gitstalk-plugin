@@ -53,10 +53,12 @@ Deploy tokens (`bsd_`) never open MCP. Never print a token.
 Backlog format: `- [ ] <id>: <title>` items (ticked = done), detail indented below. Change
 the backlog with a bean like any other file.
 
-`git_credentials` answer: pipe its `credential` field to `git credential approve`. Set
-`credential.https://<gateway host>.useHttpPath true` first so each repository keeps its own
-credential; with no helper configured, `credential.https://<gateway host>.helper 'cache
---timeout=3600'` keeps it in memory. Never put it in a URL, a file, a commit or the chat.
+MCP OAuth does not connect terminal git. First compare MCP `whoami()` with the setup script's
+`verify owner/repo`; private-repository `not found` can be an account mismatch. Reuse the
+selected key through setup before resorting to `git_credentials`. For that fallback, pipe
+only its `credential` field to `git credential approve` using non-echoing stdin and consistent
+`credential.useHttpPath=true`. Codex must not print the full tool result. Helper scoping,
+private cache sockets and process lifetime: [authentication.md](authentication.md).
 
 ## Actions tools (signed-in sessions)
 

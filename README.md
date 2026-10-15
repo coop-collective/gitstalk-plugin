@@ -31,9 +31,11 @@ codex plugin marketplace add coop-collective/gitstalk-plugin
 codex plugin add gitstalk@gitstalk
 ```
 
-Then ask Codex to connect git: it runs `curl -fsSL https://gitstalk.io/setup.sh | sh -s -- detect`,
-asks you which key to use, and finishes with the same script's `register` and
-`remote <owner>/<repo>` (the skill tells it how). Windows: `https://gitstalk.io/setup.ps1`.
+Then ask Codex to connect git. It runs the bundled `scripts/gitstalk-setup.sh` directly,
+reuses your selected key (or asks once), and completes `register`, `verify <owner>/<repo>`
+and `remote <owner>/<repo>`. Windows: `scripts/gitstalk-setup.ps1`. The shared
+[authentication guide](skills/gitstalk/references/authentication.md) is loaded from the skill;
+Codex does not need Claude Code's slash commands or environment variables.
 
 **Updating.** Claude Code: `claude plugin marketplace update gitstalk`, then
 `claude plugin update gitstalk@gitstalk`. Codex: `codex plugin marketplace upgrade gitstalk`, then
@@ -54,6 +56,13 @@ A browser tab opens: sign up or sign in with a passkey and approve the agent; th
 then names you. The MCP server is optional; git alone is enough to push and read verdicts.
 Another deployment: see [Custom host](#custom-host-self-hosted-local-staging).
 
+**MCP sign-in and terminal git are separate.** Logging in to MCP does not update git's
+saved credential or authorize an SSH key. If MCP lists a private repository but cloning
+says `no repository` or `not found`, compare MCP `whoami()` with setup's
+`verify <owner>/<repo>`. A stale git login may belong to another account. Reuse the existing
+key and complete registration in the browser as the intended account, then verify again.
+See the [authentication guide](skills/gitstalk/references/authentication.md).
+
 ## What it adds
 
 | Piece | What it does |
@@ -67,7 +76,9 @@ Another deployment: see [Custom host](#custom-host-self-hosted-local-staging).
 | `AGENTS-snippet.md` | The same guidance, compact, to paste into a repository's `AGENTS.md` for agents without plugins (Cursor, Copilot, Gemini CLI). |
 
 Until Gitstalk's SSH endpoint is live, setup also stores an HTTPS token in your OS keychain
-through git's own credential helper, for the Gitstalk host only, and says so.
+through git's own credential helper, for the Gitstalk host only, and says so. An empty/null
+`ssh_host` from `/api/setup` means there is no SSH transport to use: registering a public key
+does not enable it, and the private key does not sign HTTPS git requests.
 
 ## Setup scripts
 

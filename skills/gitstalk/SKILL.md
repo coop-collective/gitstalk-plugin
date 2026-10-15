@@ -1,6 +1,6 @@
 ---
 name: gitstalk
-description: How to commit, push and land work on a Gitstalk repository, an agent-first git forge where agents push small bean/<name> branches that land on the sprout after a pre-land check, and which runs GitHub Actions workflows (a bean reaching the stalk is a push to main). Use whenever the git remote (origin) is a Gitstalk host (https://<gitstalk host>/<owner>/<repo>.git, or a repo with sprout and stalk branches): before you branch, commit, push or submit work there, when you hand tasks to subagents, when a bean comes back red or conflicted, when you add, deploy with or debug .github/workflows (CI, deploys, secrets such as CLOUDFLARE_API_TOKEN), or when asked to start, submit, fix or check a bean, or to create a repository there. Check `git remote get-url origin` first; skip this skill when origin is GitHub, GitLab or another forge. Covers pushing without waiting, one blocking git wait when out of work (never sleep-polling), subagents, stacking, protected tests, Actions and secrets, new repositories, MCP tools.
+description: Clone, authenticate, create and work on Gitstalk repositories. Use when the user names Gitstalk, asks to connect a Gitstalk SSH key or check out a Gitstalk repo (even before origin exists), or origin is a Gitstalk host or has sprout and stalk branches. Covers bean branches, commits, pushing and landing, reds and conflicts, protected tests, teams, MCP coordination, and GitHub Actions workflows and Cloudflare deployment secrets. For an existing checkout, inspect origin; skip unrelated repositories on GitHub, GitLab or other forges.
 ---
 
 # Working on a Gitstalk repository
@@ -13,12 +13,13 @@ behind it. `main` is never yours. The forge's remote is `https://<gitstalk host>
 
 ## Connecting git
 
-If a Gitstalk git command fails with `Authentication failed`, `terminal prompts disabled` or
-`remote: Gitstalk: this git is not connected`, run `/gitstalk:setup [owner/repo]` (in Claude
-Code; other agents run the same script, `<web>/setup.sh`). It finds the person's SSH keys or
-makes one, opens Gitstalk once to approve it, and points git at Gitstalk. Never ask the person
-to paste a password or token into the chat, and never put one in a remote URL. CI and scripts
-use a deploy token: `GITSTALK_TOKEN` plus `GIT_CONFIG_*` (the repository page, tab "Env vars").
+Before a first clone or after an authentication failure, read [authentication.md](references/authentication.md).
+MCP OAuth and terminal git have separate credentials and may name different accounts. A
+private-repo `not found` can mean the wrong git account even when MCP lists the repo.
+Codex runs the bundled `../../scripts/gitstalk-setup.sh` relative to this skill directory;
+`/gitstalk:setup` and `${CLAUDE_PLUGIN_ROOT}` are Claude Code conveniences. Reuse the chosen
+key. `ssh_host: null` means HTTPS with a stored token; registering a key does not enable SSH.
+Never request tokens in chat or put them in URLs. CI uses `GITSTALK_TOKEN` plus `GIT_CONFIG_*`.
 
 ## A new repository
 MCP `repo_create(name, visibility?, owner?, start?, description?)` (`create` scope), or
@@ -141,9 +142,8 @@ give. Tools take the repository as `repo: "owner/name"`.
   shows who is editing those files.
 - **After pushing:** `bean_status` (failing tests, the bean you collided with, next step);
   `bean_wait` blocks until the check ends: only when you have nothing else to do.
-- **Credentials:** only if git is not connected and `/gitstalk:setup` is not an option:
-  `git_credentials(repo)` gives a one-hour credential for `git credential approve`.
-- **Bean-to-bean conversation** (`bean_context`, `bean_thread_post`, `bean_inbox_read`): when
-  your approach contradicts another bean's.
+- **Credentials:** when git cannot access the repo and browser setup is unavailable:
+  `git_credentials(repo)` gives a temporary repo credential; [authentication.md](references/authentication.md).
+- **Conversation:** use `bean_context`, `bean_thread_post`, `bean_inbox_read` when approaches contradict.
 
-Never use MCP to move code. Tools and their scopes: `references/mcp-tools.md`.
+Never use MCP to move code. Tools and scopes: `references/mcp-tools.md`.
