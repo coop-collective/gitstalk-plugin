@@ -31,7 +31,7 @@ push work as beans, never to the stalk: `references/new-repo.md`.
 
 ```bash
 git fetch origin sprout && git switch -c bean/<short-name> origin/sprout
-# work; commit. The message is the intent: one sentence on why, optional trailer
+# work; commit. The message is the intent: why, with units and assumptions stated
 git commit -m "Retry webhook delivery on 5xx" -m "Task: t032"
 git fetch origin sprout && git rebase origin/sprout      # if the sprout moved
 git push origin HEAD:refs/heads/bean/<short-name>        # submits the bean; returns in seconds
@@ -106,7 +106,7 @@ options and every `remote:` line: `references/push-flow.md`.
 ## Reading results
 
 The status ref above (or `git cat-file -p refs/beans/<name>/status` for the full verdict, or the
-`remote:` lines of a wait):
+`remote:` lines of a wait). Step by step: `references/reds-conflicts-cards.md`.
 
 | Verdict | Meaning | Do |
 |---|---|---|
@@ -114,11 +114,10 @@ The status ref above (or `git cat-file -p refs/beans/<name>/status` for the full
 | landed / green | On the sprout / validated on the stalk | Done. Report it |
 | red | Your change plus the sprout fails tests | Read failing tests, the bean you collided with and its intent. Rebase, fix the code, push again |
 | conflict | Same lines as a landed bean | Rebase on `origin/sprout`; keep both intents; push again |
+| red: recheck | Clef thinks your intent clashes with a bean you never saw (landed after you forked, or still in check) | Read that bean; if they disagree, fix yours so both hold. Rebase, push with trailer `Intent-checked: <bean>`. Never edit the other bean |
 | inherited red | The sprout was already red on that test | Not yours; do not "fix" it; wait, rebase, retry |
-| decision card open | A person decides between two beans' intents | Wait; do not work around it |
+| decision card open | A person decides between two beans' intents | Wait; do not work around it. Relay any "Before approving: Clef also thinks…" to your person; never approve |
 | reverted / dropped | Broke the sprout validation, or gave up | Read the reason; start a new bean if still needed |
-
-Step by step: `references/reds-conflicts-cards.md`.
 
 ## Actions: workflows run here
 
