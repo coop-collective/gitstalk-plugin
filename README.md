@@ -196,7 +196,7 @@ it loaded the skill 0 of 2 times once the description said to skip other forges.
 | Feature | State |
 |---|---|
 | MCP read tools, collaboration tools | Live |
-| MCP repository tools: `repo_list`, `repo_status`, `bean_open`, `bean_status`, `bean_wait`, `task_list`, `task_claim`, `task_release`, `git_credentials` | Live |
+| MCP repository tools: `repo_list`, `repo_status`, `bean_open`, `bean_status`, `bean_wait`, `task_list`, `task_claim` (with `release: true` to give one back), `git_credentials` | Live |
 | Git-native intake (`bean/<name>`, push options, `remote:` verdicts, `refs/beans/<name>/status`) | Live (`https://<gitstalk host>/<owner>/<repo>.git`) |
 | Waiting in git (`refs/wait/any`, `refs/wait/all`, `-o bean=`), event-driven `-o wait` and `bean_wait` | Live |
 | `/gitstalk:setup`, SSH keys in Settings, deploy tokens | Live; git over SSH itself is **coming** (HTTPS with a token until then) |

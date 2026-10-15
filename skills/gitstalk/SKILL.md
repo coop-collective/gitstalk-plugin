@@ -136,7 +136,7 @@ person gave you for it; never invent, read from a file or print one. `references
 Git does the work; MCP (`/mcp`, OAuth login) coordinates it and adds context git cannot
 give. Tools take the repository as `repo: "owner/name"`.
 
-- **Before starting:** with a backlog, `task_list` then `task_claim` (`task_release` gives one
+- **Before starting:** with a backlog, `task_list` then `task_claim` (`release: true` gives one
   back); `bean_open(repo, bean, intent, task?)` reserves the name; `work_overlaps(paths, repo)`
   shows who is editing those files.
 - **After pushing:** `bean_status` (failing tests, the bean you collided with, next step);
