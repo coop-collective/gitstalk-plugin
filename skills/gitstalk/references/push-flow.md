@@ -90,7 +90,9 @@ Every line starts `remote: gitstalk:` (`remote: beanstalk:` from a server not ye
    sprout as `<sha>`; validated later), RED (failing tests, the landed beans you collided
    with and their intent, the output's last lines), or CONFLICT (files and hunks, who landed
    them). A RED may come from approval rules (`-> recheck`): Clef thinks your intent clashes
-   with a bean you never saw; it names the bean and the `Intent-checked:` trailer to add.
+   with a bean you never saw; it names each bean with its intent on one line, says how to
+   reconcile, and gives the `Intent-checked:` trailer to add. Such a guard red (its failing
+   "test" is a `.gitstalk/` file) prints its explanation whole, from the top, not the last lines.
    Possibly a decision card notice when two beans' intents contradict.
 
 Red and conflict end with the command to run:
